@@ -1,0 +1,71 @@
+# 智能网络转发器配置文件
+# 支持TCP、HTTP、UDP协议转发
+# 支持动态地址更新和故障转移
+
+logging:
+  level: "info"
+  format: "json"
+
+network:
+  listen_addr: "0.0.0.0"
+
+# 全局缓冲区大小设置 (16KB)
+buffer_size: 16384
+
+# 全局动态更新配置
+dynamic_update:
+  check_interval: 30      # 检查间隔（秒）
+  connection_timeout: 300 # 连接超时（秒）
+  auto_reconnect: true    # 自动重连
+  health_check_interval: 60 # 健康检查间隔（秒）
+
+# 转发规则配置
+rules:
+  # HTTPS转发规则
+  - name: "HTTPS"
+    listen_port: 443
+    protocol: "tcp"
+    buffer_size: 8192     # HTTPS专用缓冲区 (8KB)
+    targets:
+      - "192.168.5.254:443"
+      - "hz.ipto.top:50443"
+    dynamic_update:
+      enabled: true
+      check_interval: 30  # 30秒检查一次
+      connection_timeout: 300
+      auto_reconnect: true
+      health_check_interval: 60
+
+  # RDP转发规则
+  - name: "RDP"
+    listen_port: 99
+    protocols: ["tcp", "udp"]  # 同时支持TCP和UDP协议，UDP优化连接性能
+    buffer_size: 32768    # RDP专用缓冲区 (32KB)
+    targets:
+      - "192.168.5.12:3389"
+      - "hz.ipto.top:57111"
+    dynamic_update:
+      enabled: true
+      check_interval: 15  # RDP连接更敏感，更频繁检查
+      connection_timeout: 300
+      auto_reconnect: true
+      health_check_interval: 60
+
+  # 网盘转发规则
+  - name: "Drive"
+    listen_port: 6690
+    protocol: "tcp"
+    buffer_size: 32768    # 网盘专用大缓冲区 (32KB)
+    targets:
+      - "192.168.5.3:6690"
+      - "hz.ipto.top:6690"
+      - "drive.4.ipto.top"  # 纯域名，通过TXT记录解析
+    dynamic_update:
+      enabled: true
+      check_interval: 45  # 网盘服务变化较慢，45秒检查一次
+      connection_timeout: 300
+      auto_reconnect: true
+      health_check_interval: 60
+
+
+
