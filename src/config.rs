@@ -60,7 +60,7 @@ impl Config {
         // 设置动态更新默认值（优化的内置参数）
         if config.dynamic_update.is_none() {
             config.dynamic_update = Some(DynamicUpdateConfig {
-                check_interval: Some(45),    // 统一的检查间隔，同时用于地址更新和健康检查
+                check_interval: Some(15),    // 缩短到15秒，与健康检查保持一致
                 connection_timeout: Some(300), // 5分钟连接超时
                 auto_reconnect: Some(true),   // 默认开启自动重连
             });
@@ -113,7 +113,7 @@ impl Config {
     // 获取动态更新配置（优化的内置默认值）
     pub fn get_dynamic_update_config(&self) -> DynamicUpdateConfig {
         self.dynamic_update.clone().unwrap_or_else(|| DynamicUpdateConfig {
-            check_interval: Some(45),    // 统一的检查间隔
+            check_interval: Some(15),    // 缩短到15秒，与健康检查保持一致
             connection_timeout: Some(300), // 5分钟连接超时
             auto_reconnect: Some(true),   // 默认开启自动重连
         })
@@ -122,7 +122,7 @@ impl Config {
 
 impl DynamicUpdateConfig {
     pub fn get_check_interval(&self) -> u64 {
-        self.check_interval.unwrap_or(45)  // 统一的检查间隔，用于所有检查任务
+        self.check_interval.unwrap_or(15)  // 缩短到15秒，提高响应速度
     }
     
     pub fn get_connection_timeout(&self) -> u64 {
