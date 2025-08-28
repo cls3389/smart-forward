@@ -17,3 +17,4 @@ async-trait = "0.1"
 dashmap = "5.0"
 chrono = { version = "0.4", features = ["serde"], default-features = false }
 trust-dns-resolver = { version = "0.23", features = ["system-config", "tokio-runtime"], default-features = false }
+local-ip-address = "0.6"

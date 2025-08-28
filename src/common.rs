@@ -7,6 +7,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
+use local_ip_address::{local_ip, list_afinet_netifas};
 
 #[derive(Debug, Clone)]
 pub struct TargetInfo {
@@ -31,39 +32,88 @@ pub struct CommonManager {
     config: Config,
     target_cache: Arc<DashMap<String, TargetInfo>>,
     rule_infos: Arc<RwLock<DashMap<String, RuleInfo>>>,
+    local_interfaces: Arc<Vec<Ipv4Addr>>, // 缓存本地网络接口
 }
 
 impl CommonManager {
     pub fn new(config: Config) -> Self {
+        let local_interfaces = Arc::new(Self::get_local_interfaces());
         Self {
             config,
             target_cache: Arc::new(DashMap::new()),
             rule_infos: Arc::new(RwLock::new(DashMap::new())),
+            local_interfaces,
         }
+    }
+    
+    // 获取本地网络接口地址
+    pub fn get_local_interfaces() -> Vec<Ipv4Addr> {
+        let mut local_ips = Vec::new();
+        
+        // 方法1: 获取默认路由使用的IP地址
+        if let Ok(ip) = local_ip() {
+            if let IpAddr::V4(ipv4) = ip {
+                local_ips.push(ipv4);
+            }
+        }
+        
+        // 方法2: 获取所有网络接口的IP地址
+        if let Ok(network_interfaces) = list_afinet_netifas() {
+            for (name, ip) in network_interfaces {
+                if let IpAddr::V4(ipv4) = ip {
+                    // 排除回环地址
+                    if !ipv4.is_loopback() {
+                        if !local_ips.contains(&ipv4) {
+                            local_ips.push(ipv4);
+                            info!("检测到网络接口 {}: {}", name, ipv4);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 如果没有检测到任何地址，使用默认的内网地址作为fallback
+        if local_ips.is_empty() {
+            warn!("未检测到本地网络接口，使用默认内网地址");
+            local_ips = vec![
+                Ipv4Addr::new(192, 168, 0, 1), 
+                Ipv4Addr::new(10, 0, 0, 1),
+                Ipv4Addr::new(172, 16, 0, 1)
+            ];
+        } else {
+            info!("检测到本地网络接口: {:?}", local_ips);
+        }
+        
+        local_ips
     }
     
     // 判断目标地址是否与本地接口在同一网段
     fn is_same_subnet(local_ips: &[Ipv4Addr], target_ip: IpAddr) -> bool {
         if let IpAddr::V4(target_ipv4) = target_ip {
             for &local_ip in local_ips {
-                // 简单的网段判断：检查是否都是192.168.x.x或10.x.x.x或172.16-31.x.x
+                // 基于实际网卡地址进行精确的网段匹配
                 let local_octets = local_ip.octets();
                 let target_octets = target_ipv4.octets();
                 
-                // 192.168.x.x网段
-                if local_octets[0] == 192 && local_octets[1] == 168 &&
-                   target_octets[0] == 192 && target_octets[1] == 168 {
+                // 优先检查是否为相同的/24网段（前3个字节相同）
+                if local_octets[0] == target_octets[0] && 
+                   local_octets[1] == target_octets[1] && 
+                   local_octets[2] == target_octets[2] {
                     return true;
                 }
                 
-                // 10.x.x.x网段
-                if local_octets[0] == 10 && target_octets[0] == 10 {
+                // 对于常见的大型内网段，使用标准的子网掩码（但只有在同一个子网内才认为是内网）
+                
+                // 10.x.x.x/8 网段 - 但只有前两个字节相同才认为同网段
+                if local_octets[0] == 10 && target_octets[0] == 10 &&
+                   local_octets[1] == target_octets[1] {
                     return true;
                 }
                 
-                // 172.16-31.x.x网段
+                // 172.16-31.x.x/12 网段 - 但只有前两个字节相同才认为同网段
                 if local_octets[0] == 172 && local_octets[1] >= 16 && local_octets[1] <= 31 &&
-                   target_octets[0] == 172 && target_octets[1] >= 16 && target_octets[1] <= 31 {
+                   target_octets[0] == 172 && target_octets[1] >= 16 && target_octets[1] <= 31 &&
+                   local_octets[1] == target_octets[1] {
                     return true;
                 }
             }
@@ -76,16 +126,12 @@ impl CommonManager {
     }
     
     pub async fn initialize(&self) -> Result<()> {
-        // 1. 定义本地网络接口地址（简化实现，使用常见的内网地址）
-        let local_interfaces = vec![
-            Ipv4Addr::new(192, 168, 0, 1), 
-            Ipv4Addr::new(10, 0, 0, 1),
-            Ipv4Addr::new(172, 16, 0, 1)
-        ];
+        // 1. 使用缓存的本地网络接口地址
+        let local_interfaces = &self.local_interfaces;
         
         // 2. DNS解析阶段：解析所有目标地址
         for rule in &self.config.rules {
-            if let Err(e) = self.initialize_rule_targets(&local_interfaces, rule).await {
+            if let Err(e) = self.initialize_rule_targets(local_interfaces, rule).await {
                 error!("规则 {} DNS解析失败: {}", rule.name, e);
             }
         }
@@ -96,7 +142,7 @@ impl CommonManager {
         info!("初始快速健康检查完成: {}", health_check_result);
         
         // 4. 选择最优地址阶段：为每个规则选择最佳目标
-        Self::update_rule_targets(&self.rule_infos, &self.target_cache).await;
+        Self::update_rule_targets(&self.rule_infos, &self.target_cache, local_interfaces).await;
         
         // 5. 验证初始化结果
         let rule_infos = self.rule_infos.read().await;
@@ -166,6 +212,7 @@ impl CommonManager {
     async fn start_health_check_task(&self) {
         let target_cache = self.target_cache.clone();
         let rule_infos = self.rule_infos.clone();
+        let local_interfaces = self.local_interfaces.clone();
         
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(45)); // 统一使用配置的检查间隔
@@ -192,7 +239,7 @@ impl CommonManager {
                 let current_status = Self::batch_health_check(&target_cache).await;
                 
                 // 4. 最后更新规则目标选择（基于健康检查结果）
-                Self::update_rule_targets(&rule_infos, &target_cache).await;
+                Self::update_rule_targets(&rule_infos, &target_cache, &local_interfaces).await;
                 
                 // 检查网络状态变化
                 if last_status != Some(current_status.clone()) {
@@ -504,6 +551,7 @@ impl CommonManager {
     async fn update_rule_targets(
         rule_infos: &Arc<RwLock<DashMap<String, RuleInfo>>>,
         target_cache: &Arc<DashMap<String, TargetInfo>>,
+        local_interfaces: &[Ipv4Addr],
     ) {
         let rule_infos_write = rule_infos.write().await;
         
@@ -527,7 +575,7 @@ impl CommonManager {
             }
             
             // 选择最佳目标（基于健康状态、延迟和优先级）
-            let new_selected_target = select_best_target_with_stickiness(&updated_targets, rule_info.selected_target.as_ref());
+            let new_selected_target = select_best_target_with_stickiness(&updated_targets, rule_info.selected_target.as_ref(), local_interfaces);
             
             // 检查是否需要更新目标
             let should_update = match (&rule_info.selected_target, &new_selected_target) {
@@ -592,14 +640,7 @@ impl CommonManager {
 }
 
 // 故障转移选择目标 - 带地址粘性的选择算法
-fn select_best_target_with_stickiness(targets: &[TargetInfo], current_target: Option<&TargetInfo>) -> Option<TargetInfo> {
-    // 定义本地网络接口地址（简化实现，使用常见的内网地址）
-    let local_interfaces = vec![
-        Ipv4Addr::new(192, 168, 0, 1), 
-        Ipv4Addr::new(10, 0, 0, 1),
-        Ipv4Addr::new(172, 16, 0, 1)
-    ];
-    
+fn select_best_target_with_stickiness(targets: &[TargetInfo], current_target: Option<&TargetInfo>, local_interfaces: &[Ipv4Addr]) -> Option<TargetInfo> {
     // 1. 首先过滤出健康的目标
     let healthy_targets: Vec<_> = targets.iter()
         .filter(|t| t.healthy)
@@ -607,7 +648,7 @@ fn select_best_target_with_stickiness(targets: &[TargetInfo], current_target: Op
     
     if healthy_targets.is_empty() {
         // 如果没有健康的目标，使用原有逻辑
-        return select_best_target(targets);
+        return select_best_target(targets, local_interfaces);
     }
     
     // 2. 检查当前目标是否仍然健康
@@ -647,18 +688,11 @@ fn select_best_target_with_stickiness(targets: &[TargetInfo], current_target: Op
     }
     
     // 3. 当前目标不健康或不存在，选择最佳目标
-    select_best_target(targets)
+    select_best_target(targets, local_interfaces)
 }
 
 // 故障转移选择目标 - 简化版选择算法（保留原有逻辑）
-fn select_best_target(targets: &[TargetInfo]) -> Option<TargetInfo> {
-    // 定义本地网络接口地址（简化实现，使用常见的内网地址）
-    let local_interfaces = vec![
-        Ipv4Addr::new(192, 168, 0, 1), 
-        Ipv4Addr::new(10, 0, 0, 1),
-        Ipv4Addr::new(172, 16, 0, 1)
-    ];
-    
+fn select_best_target(targets: &[TargetInfo], local_interfaces: &[Ipv4Addr]) -> Option<TargetInfo> {
     // 1. 首先过滤出健康的目标
     let healthy_targets: Vec<_> = targets.iter()
         .filter(|t| t.healthy)
@@ -721,24 +755,29 @@ fn select_best_target(targets: &[TargetInfo]) -> Option<TargetInfo> {
 fn is_same_subnet(local_ips: &[Ipv4Addr], target_ip: IpAddr) -> bool {
     if let IpAddr::V4(target_ipv4) = target_ip {
         for &local_ip in local_ips {
-            // 简单的网段判断：检查是否都是192.168.x.x或10.x.x.x或172.16-31.x.x
+            // 基于实际网卡地址进行精确的网段匹配
             let local_octets = local_ip.octets();
             let target_octets = target_ipv4.octets();
             
-            // 192.168.x.x网段
-            if local_octets[0] == 192 && local_octets[1] == 168 &&
-               target_octets[0] == 192 && target_octets[1] == 168 {
+            // 优先检查是否为相同的/24网段（前3个字节相同）
+            if local_octets[0] == target_octets[0] && 
+               local_octets[1] == target_octets[1] && 
+               local_octets[2] == target_octets[2] {
                 return true;
             }
             
-            // 10.x.x.x网段
-            if local_octets[0] == 10 && target_octets[0] == 10 {
+            // 对于常见的大型内网段，使用标准的子网掩码（但只有在同一个子网内才认为是内网）
+            
+            // 10.x.x.x/8 网段 - 但只有前两个字节相同才认为同网段
+            if local_octets[0] == 10 && target_octets[0] == 10 &&
+               local_octets[1] == target_octets[1] {
                 return true;
             }
             
-            // 172.16-31.x.x网段
+            // 172.16-31.x.x/12 网段 - 但只有前两个字节相同才认为同网段
             if local_octets[0] == 172 && local_octets[1] >= 16 && local_octets[1] <= 31 &&
-               target_octets[0] == 172 && target_octets[1] >= 16 && target_octets[1] <= 31 {
+               target_octets[0] == 172 && target_octets[1] >= 16 && target_octets[1] <= 31 &&
+               local_octets[1] == target_octets[1] {
                 return true;
             }
         }
