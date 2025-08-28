@@ -691,7 +691,7 @@ fn select_best_target_with_stickiness(targets: &[TargetInfo], current_target: Op
     select_best_target(targets, local_interfaces)
 }
 
-// 故障转移选择目标 - 简化版选择算法（保留原有逻辑）
+// 故障转移选择目标 - 智能选择算法（避免非同网段内网地址优先）
 fn select_best_target(targets: &[TargetInfo], local_interfaces: &[Ipv4Addr]) -> Option<TargetInfo> {
     // 1. 首先过滤出健康的目标
     let healthy_targets: Vec<_> = targets.iter()
@@ -699,22 +699,8 @@ fn select_best_target(targets: &[TargetInfo], local_interfaces: &[Ipv4Addr]) -> 
         .collect();
     
     if healthy_targets.is_empty() {
-        // 如果没有健康的目标，检查是否有最近失败次数较少的目标
-        // 优先选择失败次数少的目标，避免连续失败过多的目标
-        let mut sorted_targets: Vec<_> = targets.iter().collect();
-        sorted_targets.sort_by_key(|t| t.fail_count);
-        
-        // 如果有目标且失败次数较少（小于阈值），返回失败次数最少的目标
-        // 这样可以在初始化时更快地选择一个可能可用的目标
-        if !sorted_targets.is_empty() && sorted_targets[0].fail_count < 5 {
-            return Some(sorted_targets[0].clone());
-        }
-        
-        // 如果所有目标都失败次数较多，仍然返回第一个目标（可能是刚启动时的情况）
-        if !targets.is_empty() {
-            return Some(targets[0].clone());
-        }
-        return None;
+        // 如果没有健康的目标，使用智能初始选择策略
+        return select_initial_target_when_unhealthy(targets, local_interfaces);
     }
     
     // 2. 如果只有一个健康目标，直接返回
@@ -722,18 +708,61 @@ fn select_best_target(targets: &[TargetInfo], local_interfaces: &[Ipv4Addr]) -> 
         return healthy_targets[0].clone().into();
     }
     
-    // 3. 多个健康目标时，按以下优先级选择：
-    // - 优先选择内网地址
-    // - 优先选择延迟更低的目标
-    // - 如果延迟相近，优先选择配置中排在前面的地址
+    // 3. 多个健康目标时，使用优化的选择策略
+    select_from_healthy_targets(&healthy_targets, local_interfaces)
+}
+
+// 当没有健康目标时的智能初始选择策略
+fn select_initial_target_when_unhealthy(targets: &[TargetInfo], local_interfaces: &[Ipv4Addr]) -> Option<TargetInfo> {
+    if targets.is_empty() {
+        return None;
+    }
     
-    let mut sorted_targets = healthy_targets.clone();
+    // 按智能优先级排序：
+    // 1. 真正的同网段内网地址（优先级最高）
+    // 2. 外网地址（通过域名解析得到的，或公网IP）
+    // 3. 非同网段的内网地址（优先级最低，避免初始选择）
+    let mut sorted_targets: Vec<_> = targets.iter().collect();
     sorted_targets.sort_by(|a, b| {
-        // 首先按网段优先级排序（内网地址优先）
+        let a_priority = get_target_priority(&a, local_interfaces);
+        let b_priority = get_target_priority(&b, local_interfaces);
+        
+        // 按优先级排序（数字越小优先级越高）
+        let priority_cmp = a_priority.cmp(&b_priority);
+        if priority_cmp != std::cmp::Ordering::Equal {
+            return priority_cmp;
+        }
+        
+        // 优先级相同时，选择失败次数较少的
+        let fail_cmp = a.fail_count.cmp(&b.fail_count);
+        if fail_cmp != std::cmp::Ordering::Equal {
+            return fail_cmp;
+        }
+        
+        // 失败次数相同时，保持配置顺序
+        std::cmp::Ordering::Equal
+    });
+    
+    // 返回优先级最高且失败次数相对较少的目标
+    if let Some(best) = sorted_targets.first() {
+        if best.fail_count < 10 { // 避免选择失败次数过多的目标
+            return Some((*best).clone());
+        }
+    }
+    
+    // 如果所有目标失败次数都很多，仍然返回优先级最高的
+    Some(sorted_targets[0].clone())
+}
+
+// 从健康目标中选择最佳目标
+fn select_from_healthy_targets(healthy_targets: &[&TargetInfo], local_interfaces: &[Ipv4Addr]) -> Option<TargetInfo> {
+    let mut sorted_targets = healthy_targets.to_vec();
+    sorted_targets.sort_by(|a, b| {
+        // 对于健康的目标，仍然优先选择真正的同网段地址
         let a_is_local = is_same_subnet(&local_interfaces, a.resolved.ip());
         let b_is_local = is_same_subnet(&local_interfaces, b.resolved.ip());
         
-        // 内网地址优先
+        // 同网段地址优先
         let subnet_cmp = b_is_local.cmp(&a_is_local);
         if subnet_cmp != std::cmp::Ordering::Equal {
             return subnet_cmp;
@@ -749,6 +778,38 @@ fn select_best_target(targets: &[TargetInfo], local_interfaces: &[Ipv4Addr]) -> 
     });
     
     Some(sorted_targets[0].clone())
+}
+
+// 获取目标地址的优先级（数字越小优先级越高）
+fn get_target_priority(target: &TargetInfo, local_interfaces: &[Ipv4Addr]) -> u8 {
+    let ip = target.resolved.ip();
+    
+    // 1. 真正的同网段内网地址 - 最高优先级
+    if is_same_subnet(local_interfaces, ip) {
+        return 1;
+    }
+    
+    // 2. 判断是否为内网IP地址
+    let is_private_ip = match ip {
+        IpAddr::V4(ipv4) => {
+            let octets = ipv4.octets();
+            // 10.0.0.0/8
+            (octets[0] == 10) ||
+            // 172.16.0.0/12
+            (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31) ||
+            // 192.168.0.0/16
+            (octets[0] == 192 && octets[1] == 168)
+        }
+        IpAddr::V6(_) => false, // 简化处理，IPv6暂时当作外网地址
+    };
+    
+    if is_private_ip {
+        // 3. 非同网段的内网地址 - 最低优先级（避免初始选择）
+        return 10;
+    } else {
+        // 2. 外网地址（公网IP或通过域名解析得到的地址）- 中等优先级
+        return 5;
+    }
 }
 
 // 判断目标地址是否与本地接口在同一网段（独立函数）

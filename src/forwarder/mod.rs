@@ -91,11 +91,9 @@ impl SmartForwarder {
         }
         
         // 新增：启动动态地址更新任务（只启动一次）
-        // 注意：这里不再启动独立的动态更新任务
-        // 而是依赖公共管理器的统一调度，确保地址粘性机制生效
+        // 重新启用：确保转发器能从公共管理器同步最新目标地址
         if !*self.dynamic_update_started.read().await {
-            // 不再启动独立的动态更新任务
-            // self.start_dynamic_address_update_task().await;
+            self.start_dynamic_address_update_task().await;
             *self.dynamic_update_started.write().await = true;
         }
         
