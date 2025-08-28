@@ -40,8 +40,51 @@ impl ConnectionStats {
     pub fn get_uptime(&self) -> Duration {
         self.start_time.elapsed()
     }
-    
+}
 
+// 新增：带超时和重试的TCP连接函数
+pub async fn connect_with_timeout_and_retry(target: SocketAddr, max_retries: u32, timeout_secs: u64, retry_delay_secs: u64, log_prefix: &str) -> Result<tokio::net::TcpStream> {
+    let mut retry_count = 0;
+    
+    while retry_count < max_retries {
+        match tokio::time::timeout(
+            tokio::time::Duration::from_secs(timeout_secs),
+            tokio::net::TcpStream::connect(target)
+        ).await {
+            Ok(Ok(stream)) => {
+                if retry_count > 0 {
+                    log::info!("{} 连接重试成功，重试次数: {}", log_prefix, retry_count);
+                }
+                return Ok(stream);
+            }
+            Ok(Err(e)) => {
+                retry_count += 1;
+                if retry_count < max_retries {
+                    log::warn!("{} 连接到目标失败 {} (第{}次重试): {}，将在{}秒后重试", 
+                        log_prefix, target, retry_count, e, retry_delay_secs);
+                    tokio::time::sleep(tokio::time::Duration::from_secs(retry_delay_secs)).await;
+                } else {
+                    log::error!("{} 连接到目标失败 {} (已重试{}次): {}", 
+                        log_prefix, target, max_retries, e);
+                    return Err(anyhow::anyhow!("连接目标失败: {}", e));
+                }
+            }
+            Err(_) => {
+                retry_count += 1;
+                if retry_count < max_retries {
+                    log::warn!("{} 连接到目标超时 {} (第{}次重试)，将在{}秒后重试", 
+                        log_prefix, target, retry_count, retry_delay_secs);
+                    tokio::time::sleep(tokio::time::Duration::from_secs(retry_delay_secs)).await;
+                } else {
+                    log::error!("{} 连接到目标超时 {} (已重试{}次)", 
+                        log_prefix, target, max_retries);
+                    return Err(anyhow::anyhow!("连接目标超时")); 
+                }
+            }
+        }
+    }
+    
+    Err(anyhow::anyhow!("无法建立到目标的连接"))
 }
 
 pub async fn resolve_target(target: &str) -> Result<SocketAddr> {
@@ -178,14 +221,6 @@ async fn resolve_txt_record_with_aliyun_dns(hostname: &str) -> Result<SocketAddr
     Ok(socket_addr)
 }
 
-
-
-
-
-
-
-
-
 pub async fn test_connection(target: &str) -> Result<Duration> {
     let addr = resolve_target(target).await?;
     let start = Instant::now();
@@ -194,5 +229,23 @@ pub async fn test_connection(target: &str) -> Result<Duration> {
         Ok(Ok(_)) => Ok(start.elapsed()),
         Ok(Err(e)) => Err(anyhow::anyhow!("连接失败 {}: {}", target, e)),
         Err(_) => Err(anyhow::anyhow!("连接超时: {}", target)),
+    }
+}
+
+// UDP连接测试函数
+pub async fn test_udp_connection(target: &str) -> Result<Duration> {
+    let addr = resolve_target(target).await?;
+    let start = Instant::now();
+    
+    // 创建UDP socket并尝试发送数据
+    match tokio::time::timeout(Duration::from_secs(5), async {
+        let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
+        // 发送一个空的UDP包作为测试
+        socket.send_to(&[], addr).await?;
+        Ok::<(), anyhow::Error>(())
+    }).await {
+        Ok(Ok(_)) => Ok(start.elapsed()),
+        Ok(Err(e)) => Err(anyhow::anyhow!("UDP连接测试失败 {}: {}", target, e)),
+        Err(_) => Err(anyhow::anyhow!("UDP连接测试超时: {}", target)),
     }
 }

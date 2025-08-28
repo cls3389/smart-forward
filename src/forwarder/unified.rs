@@ -35,8 +35,6 @@ impl UnifiedForwarder {
         }
     }
     
-
-    
     // 新增：更新目标地址
     pub async fn update_target(&mut self, new_target: &str) -> Result<()> {
         if self.target_addr != new_target {
@@ -70,8 +68,6 @@ impl UnifiedForwarder {
         Ok(())
     }
     
-
-    
     // 新增：使用自定义间隔检查是否需要更新目标地址
     pub async fn should_update_target_with_interval(&self, interval_seconds: u64) -> bool {
         let last_update = *self.last_target_update.read().await;
@@ -82,15 +78,6 @@ impl UnifiedForwarder {
     // 新增：获取当前目标地址
     pub fn get_current_target(&self) -> &str {
         &self.target_addr
-    }
-    
-    // 新增：设置协议类型
-    pub async fn set_protocol(&mut self, protocol: &str) -> Result<()> {
-        // 创建一个新的规则副本，设置指定的协议
-        let mut new_rule = self.rule.clone();
-        new_rule.protocol = Some(protocol.to_string());
-        self.rule = new_rule;
-        Ok(())
     }
     
     // 新增：设置多协议支持
@@ -314,4 +301,3 @@ impl Forwarder for UnifiedForwarder {
         self
     }
 }
-

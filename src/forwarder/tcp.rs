@@ -7,6 +7,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::RwLock;
 use crate::utils::ConnectionStats;
+use crate::stats;
 
 pub struct TCPForwarder {
     listen_addr: String,
@@ -112,11 +113,17 @@ impl TCPForwarder {
             }
         };
         
-        let mut target_stream = match TcpStream::connect(target).await {
+        // 使用公共的带超时和重试的连接函数
+        let mut target_stream = match crate::utils::connect_with_timeout_and_retry(
+            target, 
+            3,  // max_retries
+            10, // timeout_secs
+            1,  // retry_delay_secs
+            &format!("规则 {}", rule_name)
+        ).await {
             Ok(stream) => stream,
             Err(e) => {
-                error!("规则 {} 连接到目标失败 {}: {}", rule_name, target, e);
-                return Err(anyhow::anyhow!("连接目标失败: {}", e));
+                return Err(e);
             }
         };
         
@@ -172,14 +179,7 @@ impl TCPForwarder {
     
     pub fn get_stats(&self) -> HashMap<String, String> {
         let stats = self.stats.blocking_read();
-        let mut result = HashMap::new();
-        
-        result.insert("connections".to_string(), stats.connections.to_string());
-        result.insert("bytes_sent".to_string(), stats.bytes_sent.to_string());
-        result.insert("bytes_received".to_string(), stats.bytes_received.to_string());
-        result.insert("uptime".to_string(), format!("{:?}", stats.get_uptime()));
-        
-        result
+        stats::get_standard_stats(&stats)
     }
 }
 

@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::utils::{resolve_target, test_connection};
+use crate::utils::resolve_target;
 use anyhow::Result;
 use dashmap::DashMap;
 use log::{error, info, warn};
@@ -191,7 +191,33 @@ impl CommonManager {
         for (target_str, target_info) in targets {
             let task = tokio::spawn(async move {
                 let start = Instant::now();
-                let result = test_connection(&target_str).await;
+                // 根据目标地址的端口号猜测协议类型
+                let protocol_type = if target_str.contains(":") {
+                    let parts: Vec<&str> = target_str.split(':').collect();
+                    if parts.len() == 2 {
+                        if let Ok(port) = parts[1].parse::<u16>() {
+                            // 根据端口号猜测协议类型
+                            match port {
+                                53 | 123 | 161 | 162 | 500 | 514 | 520 | 1900 => "udp", // 常见UDP端口
+                                _ => "tcp" // 默认使用TCP
+                            }
+                        } else {
+                            "tcp" // 默认使用TCP
+                        }
+                    } else {
+                        "tcp" // 默认使用TCP
+                    }
+                } else {
+                    "tcp" // 默认使用TCP
+                };
+                
+                // 根据协议类型选择测试方法
+                let result = if protocol_type == "udp" {
+                    crate::utils::test_udp_connection(&target_str).await
+                } else {
+                    crate::utils::test_connection(&target_str).await
+                };
+                
                 let check_time = start.elapsed();
                 (target_str, target_info, result, check_time)
             });
@@ -224,8 +250,8 @@ impl CommonManager {
                         target_info.fail_count += 1;
                         target_info.last_check = Instant::now();
                         
-                        // 只有连续失败超过3次才标记为不健康（避免过于敏感）
-                        const FAIL_THRESHOLD: u32 = 3;
+                        // 简单的失败阈值：失败2次就标记为不健康
+                        const FAIL_THRESHOLD: u32 = 2;
                         if target_info.fail_count >= FAIL_THRESHOLD {
                             if old_healthy {
                                 target_info.healthy = false;
@@ -347,7 +373,7 @@ impl CommonManager {
     }
 }
 
-// 故障转移选择目标 - 改进的选择算法
+// 故障转移选择目标 - 简化版选择算法
 fn select_best_target(targets: &[TargetInfo]) -> Option<TargetInfo> {
     // 1. 首先过滤出健康的目标
     let healthy_targets: Vec<_> = targets.iter()
@@ -363,32 +389,23 @@ fn select_best_target(targets: &[TargetInfo]) -> Option<TargetInfo> {
         return healthy_targets[0].clone().into();
     }
     
-    // 3. 多个健康目标时，按以下优先级选择：
-    // 优先级1：延迟最低的目标（如果有延迟信息）
-    // 优先级2：失败次数最少的目标
-    // 优先级3：配置顺序（第一个）
+    // 3. 两个健康目标时，优先选择：
+    // - 优先选择延迟更低的目标
+    // - 如果延迟相近，优先选择内网地址（假设内网地址在前面）
     
-    let mut best_target = healthy_targets[0];
+    let first_target = healthy_targets[0];
+    let second_target = healthy_targets[1];
     
-    for target in healthy_targets.iter().skip(1) {
-        // 比较延迟（如果都有延迟信息）
-        if let (Some(current_latency), Some(best_latency)) = (&target.latency, &best_target.latency) {
-            if current_latency < best_latency {
-                best_target = target;
-                continue;
-            } else if current_latency > best_latency {
-                continue;
-            }
-        }
-        
-        // 延迟相同或没有延迟信息时，比较失败次数
-        if target.fail_count < best_target.fail_count {
-            best_target = target;
-        } else if target.fail_count == best_target.fail_count {
-            // 失败次数相同时，选择配置顺序靠前的（保持稳定性）
-            // 这里best_target已经是较早的目标，所以不需要改变
+    // 比较延迟（如果都有延迟信息）
+    if let (Some(first_latency), Some(second_latency)) = (&first_target.latency, &second_target.latency) {
+        if first_latency < second_latency {
+            return Some(first_target.clone());
+        } else if second_latency < first_latency {
+            return Some(second_target.clone());
         }
     }
     
-    Some(best_target.clone())
+    // 延迟相同或没有延迟信息时，优先选择内网地址（配置中的第一个）
+    // 假设内网地址通常在配置中排在前面
+    Some(first_target.clone())
 }

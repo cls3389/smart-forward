@@ -2,6 +2,7 @@ mod config;
 mod forwarder;
 mod common;
 mod utils;
+mod stats;
 
 use anyhow::Result;
 use clap::Parser;
