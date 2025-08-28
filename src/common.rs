@@ -138,7 +138,7 @@ impl CommonManager {
         
         // 3. 初始健康检查阶段：批量并发检查所有目标
         // 使用快速健康检查（缩短超时时间）
-        let health_check_result = Self::quick_batch_health_check(&self.target_cache, &local_interfaces).await;
+        let health_check_result = Self::quick_batch_health_check(&self.target_cache, &local_interfaces, &self.config).await;
         info!("初始快速健康检查完成: {}", health_check_result);
         
         // 4. 选择最优地址阶段：为每个规则选择最佳目标
@@ -213,6 +213,7 @@ impl CommonManager {
         let target_cache = self.target_cache.clone();
         let rule_infos = self.rule_infos.clone();
         let local_interfaces = self.local_interfaces.clone();
+        let config = self.config.clone(); // 传递配置信息
         
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(45)); // 统一使用配置的检查间隔
@@ -235,8 +236,8 @@ impl CommonManager {
                 // 2. 等待5秒后进行健康检查，避免与DNS检查冲突
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 
-                // 3. 基于最新的DNS解析结果进行健康检查
-                let current_status = Self::batch_health_check(&target_cache).await;
+                // 3. 基于最新的DNS解析结果进行健康检查（传递规则配置）
+                let current_status = Self::batch_health_check(&target_cache, &config).await;
                 
                 // 4. 最后更新规则目标选择（基于健康检查结果）
                 Self::update_rule_targets(&rule_infos, &target_cache, &local_interfaces).await;
@@ -325,8 +326,8 @@ impl CommonManager {
         false // 所有DNS服务器都不可达
     }
     
-    // 快速健康检查 - 启动时使用，缩短超时时间
-    async fn quick_batch_health_check(target_cache: &Arc<DashMap<String, TargetInfo>>, local_interfaces: &[Ipv4Addr]) -> String {
+    // 快速健康检查 - 启动时使用，缩短超时时间，根据规则配置智能选择协议
+    async fn quick_batch_health_check(target_cache: &Arc<DashMap<String, TargetInfo>>, local_interfaces: &[Ipv4Addr], config: &Config) -> String {
         let mut targets: Vec<_> = target_cache.iter().map(|entry| {
             (entry.key().clone(), entry.value().clone())
         }).collect();
@@ -340,31 +341,29 @@ impl CommonManager {
             b_is_local.cmp(&a_is_local)
         });
         
+        // 建立目标地址到规则的映射，用于决定健康检查协议
+        let mut target_to_protocol = std::collections::HashMap::new();
+        for rule in &config.rules {
+            let protocols = rule.get_protocols();
+            for target_str in &rule.targets {
+                // 对于TCP+UDP规则，只检查TCP；对于纯UDP规则，检查UDP
+                let check_protocol = if protocols.len() == 1 && protocols[0] == "udp" {
+                    "udp" // 只有纯UDP规则才检查UDP
+                } else {
+                    "tcp" // 其他情况都检查TCP（包括TCP+UDP规则）
+                };
+                target_to_protocol.insert(target_str.clone(), check_protocol);
+            }
+        }
+        
         // 并发执行健康检查，使用更短的超时时间
         let mut tasks = Vec::new();
         for (target_str, target_info) in targets {
             let local_interfaces = local_interfaces.to_vec(); // 克隆到task中
+            let protocol_to_check = target_to_protocol.get(&target_str).copied().unwrap_or("tcp");
+            
             let task = tokio::spawn(async move {
                 let start = Instant::now();
-                // 根据目标地址的端口号猜测协议类型
-                let protocol_type = if target_str.contains(":") {
-                    let parts: Vec<&str> = target_str.split(':').collect();
-                    if parts.len() == 2 {
-                        if let Ok(port) = parts[1].parse::<u16>() {
-                            // 根据端口号猜测协议类型
-                            match port {
-                                53 | 123 | 161 | 162 | 500 | 514 | 520 | 1900 => "udp", // 常见UDP端口
-                                _ => "tcp" // 默认使用TCP
-                            }
-                        } else {
-                            "tcp" // 默认使用TCP
-                        }
-                    } else {
-                        "tcp" // 默认使用TCP
-                    }
-                } else {
-                    "tcp" // 默认使用TCP
-                };
                 
                 // 根据地址类型选择适合的超时时间
                 let timeout_duration = if is_same_subnet(&local_interfaces, target_info.resolved.ip()) {
@@ -373,8 +372,8 @@ impl CommonManager {
                     Duration::from_secs(8) // 外网地址使用8秒超时
                 };
                 
-                // 根据协议类型选择测试方法
-                let result = if protocol_type == "udp" {
+                // 根据规则配置决定健康检查协议
+                let result = if protocol_to_check == "udp" {
                     // UDP测试使用较短的超时时间
                     tokio::time::timeout(
                         timeout_duration.min(Duration::from_secs(5)), // UDP最多5秒
@@ -453,39 +452,37 @@ impl CommonManager {
         }
     }
     
-    // 标准健康检查 - 定期检查使用
-    async fn batch_health_check(target_cache: &Arc<DashMap<String, TargetInfo>>) -> String {
+    // 标准健康检查 - 定期检查使用，根据规则配置智能选择协议
+    async fn batch_health_check(target_cache: &Arc<DashMap<String, TargetInfo>>, config: &Config) -> String {
         let targets: Vec<_> = target_cache.iter().map(|entry| {
             (entry.key().clone(), entry.value().clone())
         }).collect();
         
+        // 建立目标地址到规则的映射，用于决定健康检查协议
+        let mut target_to_protocol = std::collections::HashMap::new();
+        for rule in &config.rules {
+            let protocols = rule.get_protocols();
+            for target_str in &rule.targets {
+                // 对于TCP+UDP规则，只检查TCP；对于纯UDP规则，检查UDP
+                let check_protocol = if protocols.len() == 1 && protocols[0] == "udp" {
+                    "udp" // 只有纯UDP规则才检查UDP
+                } else {
+                    "tcp" // 其他情况都检查TCP（包括TCP+UDP规则）
+                };
+                target_to_protocol.insert(target_str.clone(), check_protocol);
+            }
+        }
+        
         // 并发执行健康检查
         let mut tasks = Vec::new();
         for (target_str, target_info) in targets {
+            let protocol_to_check = target_to_protocol.get(&target_str).copied().unwrap_or("tcp");
+            
             let task = tokio::spawn(async move {
                 let start = Instant::now();
-                // 根据目标地址的端口号猜测协议类型
-                let protocol_type = if target_str.contains(":") {
-                    let parts: Vec<&str> = target_str.split(':').collect();
-                    if parts.len() == 2 {
-                        if let Ok(port) = parts[1].parse::<u16>() {
-                            // 根据端口号猜测协议类型
-                            match port {
-                                53 | 123 | 161 | 162 | 500 | 514 | 520 | 1900 => "udp", // 常见UDP端口
-                                _ => "tcp" // 默认使用TCP
-                            }
-                        } else {
-                            "tcp" // 默认使用TCP
-                        }
-                    } else {
-                        "tcp" // 默认使用TCP
-                    }
-                } else {
-                    "tcp" // 默认使用TCP
-                };
                 
-                // 根据协议类型选择测试方法
-                let result = if protocol_type == "udp" {
+                // 根据规则配置决定健康检查协议
+                let result = if protocol_to_check == "udp" {
                     crate::utils::test_udp_connection(&target_str).await
                 } else {
                     crate::utils::test_connection(&target_str).await
