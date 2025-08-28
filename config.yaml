@@ -21,9 +21,8 @@ rules:
     buffer_size: 4096     # HTTPS专用缓冲区 (4KB，较小的请求响应)
     targets:
       - "192.168.5.254:443"
-      - "stun-443.4.ipto.top"      
       - "121.40.167.222:50443"
-
+      - "stun-443.4.ipto.top"      
   # RDP转发规则
   - name: "RDP"
     listen_port: 99
@@ -32,9 +31,8 @@ rules:
     buffer_size: 16384    # RDP专用缓冲区 (16KB，平衡性能和内存)
     targets:
       - "192.168.5.12:3389"
-      - "ewin10.4.ipto.top"
       - "121.40.167.222:57111"
-
+      - "ewin10.4.ipto.top"      
   # 网盘转发规则
   - name: "Drive"
     listen_port: 6690
@@ -42,15 +40,6 @@ rules:
     buffer_size: 32768    # 网盘专用大缓冲区 (32KB，文件传输需要)
     targets:
       - "192.168.5.3:6690"
-      - "drive.4.ipto.top"  # 纯域名，通过TXT记录解析      
       - "121.40.167.222:6690"
-
-  # STUN穿透示例（默认TCP+UDP）
-  - name: "STUN"
-    listen_port: 999
-    # 默认同时支持TCP和UDP，无需指定协议
-    buffer_size: 4096    # STUN协议消息较小，4KB足够
-    targets:
-      - "112.10.240.87:7853"
-      - "stun-server.example.com:999"
+      - "drive.4.ipto.top"  # 纯域名，通过TXT记录解析      
 

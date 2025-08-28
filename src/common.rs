@@ -726,47 +726,45 @@ fn select_initial_target_when_unhealthy(targets: &[TargetInfo], local_interfaces
         return None;
     }
     
-    // 按智能优先级排序：
-    // 1. 真正的同网段内网地址（优先级最高）
-    // 2. 外网地址（通过域名解析得到的，或公网IP）
-    // 3. 非同网段的内网地址（优先级最低，避免初始选择）
-    let mut sorted_targets: Vec<_> = targets.iter().collect();
-    sorted_targets.sort_by(|a, b| {
+    // 按智能优先级排序，但在相同优先级内严格按配置顺序
+    let mut sorted_targets: Vec<_> = targets.iter().enumerate().collect();
+    sorted_targets.sort_by(|(a_idx, a), (b_idx, b)| {
         let a_priority = get_target_priority(&a, local_interfaces);
         let b_priority = get_target_priority(&b, local_interfaces);
         
-        // 按优先级排序（数字越小优先级越高）
+        // 首先按智能优先级排序（数字越小优先级越高）
         let priority_cmp = a_priority.cmp(&b_priority);
         if priority_cmp != std::cmp::Ordering::Equal {
             return priority_cmp;
         }
         
-        // 优先级相同时，选择失败次数较少的
-        let fail_cmp = a.fail_count.cmp(&b.fail_count);
-        if fail_cmp != std::cmp::Ordering::Equal {
-            return fail_cmp;
+        // 相同智能优先级时，严格按配置顺序（索引越小优先级越高）
+        let config_cmp = a_idx.cmp(b_idx);
+        if config_cmp != std::cmp::Ordering::Equal {
+            return config_cmp;
         }
         
-        // 失败次数相同时，保持配置顺序
-        std::cmp::Ordering::Equal
+        // 配置顺序相同时，选择失败次数较少的
+        a.fail_count.cmp(&b.fail_count)
     });
     
     // 返回优先级最高且失败次数相对较少的目标
-    if let Some(best) = sorted_targets.first() {
+    if let Some((_, best)) = sorted_targets.first() {
         if best.fail_count < 10 { // 避免选择失败次数过多的目标
             return Some((*best).clone());
         }
     }
     
     // 如果所有目标失败次数都很多，仍然返回优先级最高的
-    Some(sorted_targets[0].clone())
+    Some(sorted_targets[0].1.clone())
 }
 
 // 从健康目标中选择最佳目标
 fn select_from_healthy_targets(healthy_targets: &[&TargetInfo], local_interfaces: &[Ipv4Addr]) -> Option<TargetInfo> {
+    // 需要在原始目标列表中找到配置位置，这里使用一个简化的方法
     let mut sorted_targets = healthy_targets.to_vec();
     sorted_targets.sort_by(|a, b| {
-        // 对于健康的目标，仍然优先选择真正的同网段地址
+        // 先按网段优先级排序
         let a_is_local = is_same_subnet(&local_interfaces, a.resolved.ip());
         let b_is_local = is_same_subnet(&local_interfaces, b.resolved.ip());
         
@@ -776,13 +774,13 @@ fn select_from_healthy_targets(healthy_targets: &[&TargetInfo], local_interfaces
             return subnet_cmp;
         }
         
-        // 然后按延迟排序
+        // 相同网段内，按延迟排序（优先选择延迟低的）
         if let (Some(a_latency), Some(b_latency)) = (&a.latency, &b.latency) {
             return a_latency.cmp(b_latency);
         }
         
-        // 延迟相同或没有延迟信息时，保持原有顺序（配置中的顺序）
-        std::cmp::Ordering::Equal
+        // 延迟相同或没有延迟信息时，按原始地址字符串排序（保持相对稳定的顺序）
+        a.original.cmp(&b.original)
     });
     
     Some(sorted_targets[0].clone())
