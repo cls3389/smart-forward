@@ -115,10 +115,10 @@ impl UDPForwarder {
                         }
                     };
                     
-                    // 添加发送重试机制
+                    // 添加发送重试机制，减少重试次数
                     let data = &buffer[..len];
                     let mut send_success = false;
-                    let max_retries = 3;
+                    let max_retries = 1; // 减少重试次数到1次
                     let mut retry_count = 0;
                     
                     while retry_count < max_retries && !send_success {

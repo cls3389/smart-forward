@@ -100,7 +100,6 @@ async fn main() -> Result<()> {
         println!("  检查间隔: {}秒", global_dynamic_config.get_check_interval());
         println!("  连接超时: {}秒", global_dynamic_config.get_connection_timeout());
         println!("  自动重连: {}", global_dynamic_config.get_auto_reconnect());
-        println!("  健康检查间隔: {}秒", global_dynamic_config.get_health_check_interval());
         
         // 验证规则配置
         println!("\n📋 转发规则配置:");
@@ -125,7 +124,6 @@ async fn main() -> Result<()> {
             println!("      检查间隔: {}秒", rule_dynamic_config.get_check_interval());
             println!("      连接超时: {}秒", rule_dynamic_config.get_connection_timeout());
             println!("      自动重连: {}", rule_dynamic_config.get_auto_reconnect());
-            println!("      健康检查间隔: {}秒", rule_dynamic_config.get_health_check_interval());
             println!();
         }
         

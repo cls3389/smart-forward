@@ -111,12 +111,23 @@ impl SmartForwarder {
             let global_dynamic_config = config.get_dynamic_update_config();
             let check_interval = global_dynamic_config.get_check_interval();
             
-            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(check_interval));
+            // 使用可变间隔，启动后的前几次检查使用更短的间隔
+            let mut check_count = 0;
+            let mut current_interval = if check_interval > 5 { 5 } else { check_interval }; // 启动后前几次使用5秒或更短的间隔
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(current_interval));
             
-            info!("启动动态地址更新任务，检查间隔: {}秒", check_interval);
+            info!("启动动态地址更新任务，初始检查间隔: {}秒", current_interval);
             
             loop {
                 interval.tick().await;
+                check_count += 1;
+                
+                // 每5次检查后恢复到正常间隔
+                if check_count == 5 && current_interval != check_interval {
+                    current_interval = check_interval;
+                    interval = tokio::time::interval(tokio::time::Duration::from_secs(current_interval));
+                    info!("动态地址更新任务恢复到正常检查间隔: {}秒", current_interval);
+                }
                 
                 // 获取所有转发器
                 let mut forwarders_write = forwarders.write().await;
@@ -129,15 +140,20 @@ impl SmartForwarder {
                         global_dynamic_config.clone()
                     };
                     
-                    // 检查是否启用动态更新
-                    if !rule_config.get_auto_reconnect() {
-                        continue;
-                    }
+                    // 智能转发是系统的核心功能，默认开启
+                    // 无需检查配置，直接执行
                     
                     // 检查是否需要更新目标地址
                     if let Some(unified_forwarder) = forwarder.as_any_mut().downcast_mut::<crate::forwarder::unified::UnifiedForwarder>() {
-                        // 使用规则特定的检查间隔
-                        let rule_check_interval = rule_config.get_check_interval();
+                        // 使用规则特定的检查间隔（但受当前间隔影响）
+                        let rule_check_interval = if check_count <= 5 {
+                            // 启动后的前5次检查使用较短间隔
+                            let rule_interval = rule_config.get_check_interval();
+                            if rule_interval > 5 { 5 } else { rule_interval }
+                        } else {
+                            rule_config.get_check_interval()
+                        };
+                        
                         if unified_forwarder.should_update_target_with_interval(rule_check_interval).await {
                             // 从公共管理器获取最新的最佳目标地址
                             match common_manager.get_best_target_string(rule_name).await {

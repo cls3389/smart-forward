@@ -40,7 +40,7 @@ pub struct DynamicUpdateConfig {
     pub check_interval: Option<u64>,
     pub connection_timeout: Option<u64>,
     pub auto_reconnect: Option<bool>,
-    pub health_check_interval: Option<u64>,
+    // 移除 health_check_interval，使用统一的 check_interval
 }
 
 impl Config {
@@ -57,13 +57,12 @@ impl Config {
             config.network.listen_addr = "0.0.0.0".to_string();
         }
         
-        // 设置动态更新默认值
+        // 设置动态更新默认值（优化的内置参数）
         if config.dynamic_update.is_none() {
             config.dynamic_update = Some(DynamicUpdateConfig {
-                check_interval: Some(30),
-                connection_timeout: Some(300),
-                auto_reconnect: Some(true),
-                health_check_interval: Some(60),
+                check_interval: Some(45),    // 统一的检查间隔，同时用于地址更新和健康检查
+                connection_timeout: Some(300), // 5分钟连接超时
+                auto_reconnect: Some(true),   // 默认开启自动重连
             });
         }
         
@@ -111,20 +110,19 @@ impl Config {
         Ok(())
     }
     
-    // 获取动态更新配置
+    // 获取动态更新配置（优化的内置默认值）
     pub fn get_dynamic_update_config(&self) -> DynamicUpdateConfig {
         self.dynamic_update.clone().unwrap_or_else(|| DynamicUpdateConfig {
-            check_interval: Some(30),
-            connection_timeout: Some(300),
-            auto_reconnect: Some(true),
-            health_check_interval: Some(60),
+            check_interval: Some(45),    // 统一的检查间隔
+            connection_timeout: Some(300), // 5分钟连接超时
+            auto_reconnect: Some(true),   // 默认开启自动重连
         })
     }
 }
 
 impl DynamicUpdateConfig {
     pub fn get_check_interval(&self) -> u64 {
-        self.check_interval.unwrap_or(30)
+        self.check_interval.unwrap_or(45)  // 统一的检查间隔，用于所有检查任务
     }
     
     pub fn get_connection_timeout(&self) -> u64 {
@@ -133,10 +131,6 @@ impl DynamicUpdateConfig {
     
     pub fn get_auto_reconnect(&self) -> bool {
         self.auto_reconnect.unwrap_or(true)
-    }
-    
-    pub fn get_health_check_interval(&self) -> u64 {
-        self.health_check_interval.unwrap_or(60)
     }
 }
 
@@ -175,7 +169,6 @@ impl ForwardRule {
                 check_interval: rule_config.check_interval.or(global_config.check_interval),
                 connection_timeout: rule_config.connection_timeout.or(global_config.connection_timeout),
                 auto_reconnect: rule_config.auto_reconnect.or(global_config.auto_reconnect),
-                health_check_interval: rule_config.health_check_interval.or(global_config.health_check_interval),
             }
         } else {
             global_config.clone()

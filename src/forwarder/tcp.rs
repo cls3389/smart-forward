@@ -113,12 +113,12 @@ impl TCPForwarder {
             }
         };
         
-        // 使用公共的带超时和重试的连接函数
+        // 使用公共的带超时和重试的连接函数，减少重试次数
         let mut target_stream = match crate::utils::connect_with_timeout_and_retry(
             target, 
-            3,  // max_retries
-            10, // timeout_secs
-            1,  // retry_delay_secs
+            1,  // max_retries - 减少到1次重试
+            3,  // timeout_secs - 3秒超时（从5秒减少到3秒）
+            1,  // retry_delay_secs - 1秒重试延迟
             &format!("规则 {}", rule_name)
         ).await {
             Ok(stream) => stream,
