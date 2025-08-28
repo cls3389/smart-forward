@@ -225,7 +225,8 @@ pub async fn test_connection(target: &str) -> Result<Duration> {
     let addr = resolve_target(target).await?;
     let start = Instant::now();
     
-    match tokio::time::timeout(Duration::from_secs(2), tokio::net::TcpStream::connect(addr)).await {
+    // 增加超时时间到8秒，适应外网地址的延迟
+    match tokio::time::timeout(Duration::from_secs(8), tokio::net::TcpStream::connect(addr)).await {
         Ok(Ok(_)) => Ok(start.elapsed()),
         Ok(Err(e)) => Err(anyhow::anyhow!("连接失败 {}: {}", target, e)),
         Err(_) => Err(anyhow::anyhow!("连接超时: {}", target)),
@@ -237,8 +238,8 @@ pub async fn test_udp_connection(target: &str) -> Result<Duration> {
     let addr = resolve_target(target).await?;
     let start = Instant::now();
     
-    // 创建UDP socket并尝试发送数据
-    match tokio::time::timeout(Duration::from_secs(2), async {
+    // 创建UDP socket并尝试发送数据，增加超时时间为5秒
+    match tokio::time::timeout(Duration::from_secs(5), async {
         let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
         // 发送一个空的UDP包作为测试
         socket.send_to(&[], addr).await?;

@@ -343,6 +343,7 @@ impl CommonManager {
         // 并发执行健康检查，使用更短的超时时间
         let mut tasks = Vec::new();
         for (target_str, target_info) in targets {
+            let local_interfaces = local_interfaces.to_vec(); // 克隆到task中
             let task = tokio::spawn(async move {
                 let start = Instant::now();
                 // 根据目标地址的端口号猜测协议类型
@@ -365,17 +366,24 @@ impl CommonManager {
                     "tcp" // 默认使用TCP
                 };
                 
-                // 根据协议类型选择测试方法，使用更短的超时时间（1秒）
+                // 根据地址类型选择适合的超时时间
+                let timeout_duration = if is_same_subnet(&local_interfaces, target_info.resolved.ip()) {
+                    Duration::from_secs(3) // 内网地址使用3秒超时
+                } else {
+                    Duration::from_secs(8) // 外网地址使用8秒超时
+                };
+                
+                // 根据协议类型选择测试方法
                 let result = if protocol_type == "udp" {
-                    // UDP测试使用更短的超时时间
+                    // UDP测试使用较短的超时时间
                     tokio::time::timeout(
-                        Duration::from_secs(1),
+                        timeout_duration.min(Duration::from_secs(5)), // UDP最多5秒
                         crate::utils::test_udp_connection(&target_str)
                     ).await.unwrap_or(Err(anyhow::anyhow!("UDP连接测试超时")))
                 } else {
-                    // TCP测试使用更短的超时时间
+                    // TCP测试使用动态超时时间
                     tokio::time::timeout(
-                        Duration::from_secs(1),
+                        timeout_duration,
                         crate::utils::test_connection(&target_str)
                     ).await.unwrap_or(Err(anyhow::anyhow!("TCP连接测试超时")))
                 };

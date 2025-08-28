@@ -17,7 +17,7 @@ rules:
   # HTTPS转发规则
   - name: "HTTPS"
     listen_port: 443
-    protocol: "tcp"
+    protocol: "tcp"    # 单独指定TCP协议（HTTPS只需要TCP）
     buffer_size: 8192     # HTTPS专用缓冲区 (8KB)
     targets:
       - "192.168.5.254:443"
@@ -27,7 +27,8 @@ rules:
   # RDP转发规则
   - name: "RDP"
     listen_port: 99
-    protocols: ["tcp", "udp"]  # 同时支持TCP和UDP协议，UDP优化连接性能
+    # 默认同时支持TCP和UDP协议，无需指定 protocols
+    # protocols: ["tcp", "udp"]  # 可选：只有需要自定义时才指定
     buffer_size: 32768    # RDP专用缓冲区 (32KB)
     targets:
       - "192.168.5.12:3389"
@@ -37,12 +38,21 @@ rules:
   # 网盘转发规则
   - name: "Drive"
     listen_port: 6690
-    protocol: "tcp"
+    protocol: "tcp"    # 网盘只需要TCP协议
     buffer_size: 32768    # 网盘专用大缓冲区 (32KB)
     targets:
       - "192.168.5.3:6690"
       - "drive.4.ipto.top"  # 纯域名，通过TXT记录解析      
       - "121.40.167.222:6690"
+
+  # STUN穿透示例（默认TCP+UDP）
+  - name: "STUN"
+    listen_port: 999
+    # 默认同时支持TCP和UDP，无需指定协议
+    buffer_size: 16384
+    targets:
+      - "112.10.240.87:7853"
+      - "stun-server.example.com:999"
 
 
 

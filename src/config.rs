@@ -150,11 +150,14 @@ impl ForwardRule {
     // 获取所有支持的协议列表
     pub fn get_protocols(&self) -> Vec<String> {
         if let Some(protocols) = &self.protocols {
+            // 如果明确指定了protocols，使用指定的协议列表
             protocols.clone()
         } else if let Some(protocol) = &self.protocol {
+            // 如果指定了单个protocol，只使用该协议
             vec![protocol.clone()]
         } else {
-            vec!["tcp".to_string()]
+            // 默认同时支持TCP和UDP（最常见的使用场景）
+            vec!["tcp".to_string(), "udp".to_string()]
         }
     }
     
