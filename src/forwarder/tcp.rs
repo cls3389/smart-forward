@@ -139,10 +139,24 @@ impl TCPForwarder {
         );
         
         if let Err(e) = client_to_target {
-            error!("规则 {} 客户端到目标转发错误: {}", rule_name, e);
+            // 区分网络错误和其他错误，减少断网时的日志噪音
+            let error_msg = e.to_string();
+            if error_msg.contains("10054") || error_msg.contains("10053") || 
+               error_msg.contains("连接被对方重置") || error_msg.contains("连接被中止") {
+                // 这些是常见的网络断开错误，使用debug级别
+                log::debug!("规则 {} 客户端到目标连接断开: {}", rule_name, e);
+            } else {
+                error!("规则 {} 客户端到目标转发错误: {}", rule_name, e);
+            }
         }
         if let Err(e) = target_to_client {
-            error!("规则 {} 目标到客户端转发错误: {}", rule_name, e);
+            let error_msg = e.to_string();
+            if error_msg.contains("10054") || error_msg.contains("10053") || 
+               error_msg.contains("连接被对方重置") || error_msg.contains("连接被中止") {
+                log::debug!("规则 {} 目标到客户端连接断开: {}", rule_name, e);
+            } else {
+                error!("规则 {} 目标到客户端转发错误: {}", rule_name, e);
+            }
         }
         
         Ok(())

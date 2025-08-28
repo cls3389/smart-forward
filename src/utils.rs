@@ -59,13 +59,27 @@ pub async fn connect_with_timeout_and_retry(target: SocketAddr, max_retries: u32
             }
             Ok(Err(e)) => {
                 retry_count += 1;
+                let error_msg = e.to_string();
+                let is_network_error = error_msg.contains("10065") || error_msg.contains("10061") ||
+                                      error_msg.contains("网络不可达") || error_msg.contains("拒绝连接");
+                
                 if retry_count < max_retries {
-                    log::warn!("{} 连接到目标失败 {} (第{}次重试): {}，将在{}秒后重试", 
-                        log_prefix, target, retry_count, e, retry_delay_secs);
+                    if is_network_error {
+                        log::debug!("{} 连接到目标失败 {} (第{}次重试): {}，将在{}秒后重试", 
+                            log_prefix, target, retry_count, e, retry_delay_secs);
+                    } else {
+                        log::warn!("{} 连接到目标失败 {} (第{}次重试): {}，将在{}秒后重试", 
+                            log_prefix, target, retry_count, e, retry_delay_secs);
+                    }
                     tokio::time::sleep(tokio::time::Duration::from_secs(retry_delay_secs)).await;
                 } else {
-                    log::error!("{} 连接到目标失败 {} (已重试{}次): {}", 
-                        log_prefix, target, max_retries, e);
+                    if is_network_error {
+                        log::debug!("{} 连接到目标失败 {} (已重试{}次): {}", 
+                            log_prefix, target, max_retries, e);
+                    } else {
+                        log::error!("{} 连接到目标失败 {} (已重试{}次): {}", 
+                            log_prefix, target, max_retries, e);
+                    }
                     return Err(anyhow::anyhow!("连接目标失败: {}", e));
                 }
             }
