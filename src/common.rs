@@ -216,36 +216,16 @@ impl CommonManager {
         let config = self.config.clone(); // 传递配置信息
         
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(45)); // 统一使用配置的检查间隔
+            let mut interval = tokio::time::interval(Duration::from_secs(15)); // 缩短检查间隔到15秒
             let mut _check_count = 0;
             
-            info!("启动定期健康检查任务，间隔45秒");
+            info!("启动定期健康检查任务，间隔15秒");
             
             let mut last_status = None;
-            let mut is_network_down = false;
             
             loop {
-                // 首先检查网络状态，断网时跳过所有检查
-                let network_status = Self::check_network_status().await;
-                if !network_status && !is_network_down {
-                    is_network_down = true;
-                    info!("检测到断网，暂停DNS检查和健康检测");
-                } else if network_status && is_network_down {
-                    is_network_down = false;
-                    info!("网络恢复，立即开始DNS检查和健康检测");
-                }
-                
-                // 断网时跳过DNS检查和健康检查
-                if is_network_down {
-                    tokio::time::sleep(Duration::from_secs(10)).await; // 断网时每10秒检查一次网络状态
-                    continue;
-                }
-                
-                // 正常情况下等待检查间隔
-                if !is_network_down {
-                    interval.tick().await;
-                }
-
+                // 等待检查间隔
+                interval.tick().await;
                 
                 // 1. 进行DNS检查，更新所有目标地址的解析结果
                 Self::update_dns_resolutions(&target_cache).await;
@@ -253,15 +233,15 @@ impl CommonManager {
                 // 2. 等待5秒后进行健康检查，避免与DNS检查冲突
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 
-                // 3. 基于最新的DNS解析结果进行健康检查（传递规则配置）
+                // 3. 基于最新的DNS解析结果进行健康检查
                 let current_status = Self::batch_health_check(&target_cache, &config).await;
                 
-                // 4. 最后更新规则目标选择（基于健康检查结果）
+                // 4. 更新规则目标选择
                 Self::update_rule_targets(&rule_infos, &target_cache, &local_interfaces).await;
                 
-                // 记录网络状态变化
+                // 只在状态变化时记录日志，减少重复输出
                 if last_status != Some(current_status.clone()) {
-                    info!("网络状态: {}", current_status);
+                    info!("健康检查状态: {}", current_status);
                     last_status = Some(current_status.clone());
                 }
             }
@@ -312,44 +292,6 @@ impl CommonManager {
         }
     }
     
-    // 检查网络状态 - 快速棄测断网状态
-    async fn check_network_status() -> bool {
-        // 首先检查本地网关（通常是192.168.x.1或10.x.x.1）
-        let local_gateways = vec![
-            "192.168.1.1:80",   // 常见网关
-            "192.168.2.1:80",   // 常见网关 
-            "10.0.0.1:80",      // 常见网关
-            "192.168.0.1:80",   // 常见网关
-        ];
-        
-        // 快速检查本地网关，超时时间更短
-        for gateway in &local_gateways {
-            if let Ok(_) = tokio::time::timeout(
-                Duration::from_millis(500), // 500毫秒超时
-                tokio::net::TcpStream::connect(gateway)
-            ).await {
-                return true; // 本地网关可达，网络正常
-            }
-        }
-        
-        // 本地网关不可达，再检查DNS服务器
-        let dns_servers = vec![
-            "223.5.5.5:53",  // 阿里云DNS
-            "8.8.8.8:53",    // Google DNS
-            "114.114.114.114:53", // 114 DNS
-        ];
-        
-        for dns_server in dns_servers {
-            if let Ok(_) = tokio::time::timeout(
-                Duration::from_secs(2), // 缩短为2秒超时
-                tokio::net::TcpStream::connect(dns_server)
-            ).await {
-                return true; // 至少有一个DNS服务器可达
-            }
-        }
-        
-        false // 所有网关和DNS服务器都不可达，认为断网
-    }
     
     // 快速健康检查 - 启动时使用，缩短超时时间，根据规则配置智能选择协议
     async fn quick_batch_health_check(target_cache: &Arc<DashMap<String, TargetInfo>>, local_interfaces: &[Ipv4Addr], config: &Config) -> String {

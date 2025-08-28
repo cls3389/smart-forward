@@ -8,6 +8,7 @@ use anyhow::Result;
 use clap::Parser;
 use log::info;
 use std::path::PathBuf;
+use chrono::prelude::*;
 
 use crate::config::Config;
 use crate::common::CommonManager;
@@ -62,8 +63,34 @@ async fn main() -> Result<()> {
         }
     }
     
-    // 初始化日志（只初始化一次）
-    env_logger::init();
+    // 初始化自定义日志格式（显示北京时间并简化模块路径）
+    env_logger::Builder::from_default_env()
+        .format(|buf, record| {
+            use std::io::Write;
+            use chrono::prelude::*;
+            
+            // 获取北京时间
+            let beijing_time = Local::now();
+            
+            // 简化模块路径
+            let module_path = record.module_path().unwrap_or("unknown");
+            let simplified_module = if module_path.starts_with("smart_forward::") {
+                // 移除 smart_forward:: 前缀，只保留后面的部分
+                &module_path[14..] // "smart_forward::" 长度为14
+            } else {
+                module_path
+            };
+            
+            writeln!(
+                buf,
+                "[{} {} {}] {}",
+                beijing_time.format("%Y-%m-%d %H:%M:%S"),
+                record.level(),
+                simplified_module,
+                record.args()
+            )
+        })
+        .init();
     
     let args = Args::parse();
     
