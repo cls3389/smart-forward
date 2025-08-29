@@ -5,9 +5,9 @@
 ## 特性
 - 多协议：TCP / UDP / HTTP（80 自动 301 到 HTTPS）
 - 动态地址：支持 A/AAAA 与 TXT 记录（`hostname` -> TXT `IP:PORT`）
-- 健康检查：快速检查 + 定期检查，自动切换最佳目标
+- 健康检查：快速检查 + 定期检查（仅 TCP 探测），自动切换最佳目标
 - 会话粘性：同网段优先、本地优先、失败次数与延迟综合权衡
-- UDP 会话映射：客户端独立上游 socket，已实现回程与 60 秒闲置清理
+- UDP 会话映射：客户端独立上游 socket，已实现回程与 60 秒闲置清理（不进行 UDP 健康检查）
 - 灵活缓冲：全局与规则级 `buffer_size`
 
 ## 快速开始
@@ -46,11 +46,13 @@ rules:
   - name: "RDP"
     listen_port: 99
     # 未显式指定时，默认同时支持 tcp+udp
-    buffer_size: 32768  # 建议 16K~32K；外网约30Mbps 足够
+    buffer_size: 16384  # 建议 16K~32K；外网约30Mbps 足够
     targets:
       - "192.168.5.12:3389"
       - "121.40.167.222:57111"
       - "ewin10.4.ipto.top"
+
+# 提示：UDP 不进行健康检查，仅进行 UDP 转发；健康检查只对 TCP 生效。
 
   - name: "Drive"
     listen_port: 6690

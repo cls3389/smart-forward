@@ -87,43 +87,6 @@ impl CommonManager {
         local_ips
     }
     
-    // 判断目标地址是否与本地接口在同一网段
-    fn is_same_subnet(local_ips: &[Ipv4Addr], target_ip: IpAddr) -> bool {
-        if let IpAddr::V4(target_ipv4) = target_ip {
-            for &local_ip in local_ips {
-                // 基于实际网卡地址进行精确的网段匹配
-                let local_octets = local_ip.octets();
-                let target_octets = target_ipv4.octets();
-                
-                // 优先检查是否为相同的/24网段（前3个字节相同）
-                if local_octets[0] == target_octets[0] && 
-                   local_octets[1] == target_octets[1] && 
-                   local_octets[2] == target_octets[2] {
-                    return true;
-                }
-                
-                // 对于常见的大型内网段，使用标准的子网掩码（但只有在同一个子网内才认为是内网）
-                
-                // 10.x.x.x/8 网段 - 但只有前两个字节相同才认为同网段
-                if local_octets[0] == 10 && target_octets[0] == 10 &&
-                   local_octets[1] == target_octets[1] {
-                    return true;
-                }
-                
-                // 172.16-31.x.x/12 网段 - 但只有前两个字节相同才认为同网段
-                if local_octets[0] == 172 && local_octets[1] >= 16 && local_octets[1] <= 31 &&
-                   target_octets[0] == 172 && target_octets[1] >= 16 && target_octets[1] <= 31 &&
-                   local_octets[1] == target_octets[1] {
-                    return true;
-                }
-            }
-        } else {
-            // 对于IPv6，简单判断是否为回环地址
-            return target_ip.is_loopback();
-        }
-        
-        false
-    }
     
     pub async fn initialize(&self) -> Result<()> {
         // 1. 使用缓存的本地网络接口地址
@@ -184,7 +147,7 @@ impl CommonManager {
                     };
                     
                     // 判断是否为内网地址
-                    let is_local = Self::is_same_subnet(local_interfaces, resolved_addr.ip());
+                    let is_local = is_same_subnet(local_interfaces, resolved_addr.ip());
                     
                     targets.push(target_info.clone());
                     self.target_cache.insert(target_str.clone(), target_info);
@@ -341,11 +304,8 @@ impl CommonManager {
                 
                 // 根据规则配置决定健康检查协议
                 let result = if protocol_to_check == "udp" {
-                    // UDP测试使用较短的超时时间
-                    tokio::time::timeout(
-                        timeout_duration.min(Duration::from_secs(5)), // UDP最多5秒
-                        crate::utils::test_udp_connection(&target_str)
-                    ).await.unwrap_or(Err(anyhow::anyhow!("UDP连接测试超时")))
+                    // 移除UDP连通性检测：跳过探测，避免不准确结果
+                    Ok(Duration::from_millis(0))
                 } else {
                     // TCP测试使用动态超时时间
                     tokio::time::timeout(
@@ -450,7 +410,8 @@ impl CommonManager {
                 
                 // 根据规则配置决定健康检查协议
                 let result = if protocol_to_check == "udp" {
-                    crate::utils::test_udp_connection(&target_str).await
+                    // 移除UDP连通性检测：直接视为通过，避免误判
+                    Ok(Duration::from_millis(0))
                 } else {
                     crate::utils::test_connection(&target_str).await
                 };

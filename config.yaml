@@ -27,7 +27,7 @@ rules:
   - name: "RDP"
     listen_port: 99
  #   protocol: "tcp" 
-    buffer_size: 32768    # RDP UDP专用大缓冲区 (64KB，适合视频流)
+    buffer_size: 16384    # RDP UDP专用大缓冲区 (64KB，适合视频流)
     targets:
       - "192.168.5.12:3389"
       - "121.40.167.222:57111"
@@ -42,3 +42,16 @@ rules:
       - "121.40.167.222:6690"
       - "drive.4.ipto.top"  # 纯域名，通过TXT记录解析      
 
+  - name: "tRDP"
+    listen_port: 999
+    protocol: "tcp" 
+    buffer_size: 16384    # RDP UDP专用大缓冲区 (64KB，适合视频流)
+    targets:
+      - "ewin10.4.ipto.top"     
+
+  - name: "uRDP"
+    listen_port: 999
+    protocol: "udp" 
+    buffer_size: 16384    # RDP UDP专用大缓冲区 (64KB，适合视频流)
+    targets:
+      - "uewin10.4.ipto.top"          

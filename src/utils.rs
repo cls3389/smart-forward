@@ -248,19 +248,4 @@ pub async fn test_connection(target: &str) -> Result<Duration> {
 }
 
 // UDP连接测试函数
-pub async fn test_udp_connection(target: &str) -> Result<Duration> {
-    let addr = resolve_target(target).await?;
-    let start = Instant::now();
-    
-    // 创建UDP socket并尝试发送数据，增加超时时间为5秒
-    match tokio::time::timeout(Duration::from_secs(5), async {
-        let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
-        // 发送一个空的UDP包作为测试
-        socket.send_to(&[], addr).await?;
-        Ok::<(), anyhow::Error>(())
-    }).await {
-        Ok(Ok(_)) => Ok(start.elapsed()),
-        Ok(Err(e)) => Err(anyhow::anyhow!("UDP连接测试失败 {}: {}", target, e)),
-        Err(_) => Err(anyhow::anyhow!("UDP连接测试超时: {}", target)),
-    }
-}
+// 已移除: UDP连通性测试函数（不再使用，避免误判）

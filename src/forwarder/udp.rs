@@ -7,7 +7,7 @@ use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
 use crate::utils::ConnectionStats;
 use crate::stats;
-use std::collections::HashMap as StdHashMap;
+// 统一使用标准 HashMap，移除别名
 
 pub struct UDPForwarder {
     listen_addr: String,
@@ -18,7 +18,7 @@ pub struct UDPForwarder {
     socket: Option<UdpSocket>,
     target_addr: Arc<RwLock<String>>,
     // 新增：会话映射（客户端 -> 上游会话）
-    sessions: Arc<RwLock<StdHashMap<std::net::SocketAddr, UdpSession>>>,
+    sessions: Arc<RwLock<HashMap<std::net::SocketAddr, UdpSession>>>,
 }
 
 impl UDPForwarder {
@@ -31,7 +31,7 @@ impl UDPForwarder {
             running: Arc::new(RwLock::new(false)),
             socket: None,
             target_addr: Arc::new(RwLock::new(String::new())),
-            sessions: Arc::new(RwLock::new(StdHashMap::new())),
+            sessions: Arc::new(RwLock::new(HashMap::new())),
         }
     }
     
@@ -98,7 +98,7 @@ impl UDPForwarder {
         stats: Arc<RwLock<ConnectionStats>>,
         running: Arc<RwLock<bool>>,
         target_addr: Arc<RwLock<String>>,
-        sessions: Arc<RwLock<StdHashMap<std::net::SocketAddr, UdpSession>>>,
+        sessions: Arc<RwLock<HashMap<std::net::SocketAddr, UdpSession>>>,
     ) {
         let mut buffer = vec![0u8; buffer_size];
         // 允许在回程任务中共享监听socket
