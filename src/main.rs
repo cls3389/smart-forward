@@ -50,8 +50,8 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // 设置时区为北京时间
-    std::env::set_var("TZ", "Asia/Shanghai");
+    // 设置时区为北京时间（当前std::env::set_var为unsafe API）
+    unsafe { std::env::set_var("TZ", "Asia/Shanghai"); }
 
     let args = Args::parse();
     
@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
 
     // 初始化日志：优先使用配置中的 level/format，若环境已设置 RUST_LOG 则尊重环境
     if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", &config.logging.level);
+        unsafe { std::env::set_var("RUST_LOG", &config.logging.level); }
     }
 
     let mut logger_builder = env_logger::Builder::from_default_env();

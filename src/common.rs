@@ -609,6 +609,17 @@ impl CommonManager {
         let addr = self.get_best_target(rule_name).await?;
         Ok(addr.to_string())
     }
+
+    pub async fn start_session_cleanup_task(&self) {
+        // 预留：供UDPForwarder或统一转发器调用的会话清理调度（如需集中管理会话，可在此扩展）
+        tokio::spawn(async move {
+            let mut _interval = tokio::time::interval(Duration::from_secs(60));
+            loop {
+                _interval.tick().await;
+                // 当前会话保存在各UDP转发器内部；如未来集中，会在此清理。
+            }
+        });
+    }
 }
 
 // 故障转移选择目标 - 带地址粘性的选择算法

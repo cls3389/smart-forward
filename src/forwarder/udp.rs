@@ -7,6 +7,7 @@ use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
 use crate::utils::ConnectionStats;
 use crate::stats;
+use std::collections::HashMap as StdHashMap;
 
 pub struct UDPForwarder {
     listen_addr: String,
@@ -16,6 +17,8 @@ pub struct UDPForwarder {
     running: Arc<RwLock<bool>>,
     socket: Option<UdpSocket>,
     target_addr: Arc<RwLock<String>>,
+    // 新增：会话映射（客户端 -> 上游会话）
+    sessions: Arc<RwLock<StdHashMap<std::net::SocketAddr, UdpSession>>>,
 }
 
 impl UDPForwarder {
@@ -28,6 +31,7 @@ impl UDPForwarder {
             running: Arc::new(RwLock::new(false)),
             socket: None,
             target_addr: Arc::new(RwLock::new(String::new())),
+            sessions: Arc::new(RwLock::new(StdHashMap::new())),
         }
     }
     
@@ -45,13 +49,42 @@ impl UDPForwarder {
         let buffer_size = self.buffer_size;
         let name = self.name.clone();
         let target_addr_arc = self.target_addr.clone();
+        let sessions_arc = self.sessions.clone();
         
         let socket = self.socket.take().ok_or_else(|| {
             anyhow::anyhow!("UDP socket未初始化")
         })?;
         
         tokio::spawn(async move {
-            Self::udp_forward_loop(socket, buffer_size, name, stats, running, target_addr_arc).await;
+            Self::udp_forward_loop(socket, buffer_size, name, stats, running.clone(), target_addr_arc, sessions_arc.clone()).await;
+        });
+
+        // 会话清理任务：移除 60 秒无活动的会话
+        let sessions_cleanup = self.sessions.clone();
+        let running_cleanup = self.running.clone();
+        tokio::spawn(async move {
+            const IDLE_SECS: u64 = 60;
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
+            loop {
+                if !*running_cleanup.read().await { break; }
+                interval.tick().await;
+                let now = std::time::Instant::now();
+                let mut to_remove = Vec::new();
+                {
+                    let sessions_read = sessions_cleanup.read().await;
+                    for (client, sess) in sessions_read.iter() {
+                        if now.duration_since(sess.last_seen).as_secs() > IDLE_SECS {
+                            to_remove.push(*client);
+                        }
+                    }
+                }
+                if !to_remove.is_empty() {
+                    let mut sessions_write = sessions_cleanup.write().await;
+                    for client in to_remove {
+                        sessions_write.remove(&client);
+                    }
+                }
+            }
         });
         
         Ok(())
@@ -64,6 +97,7 @@ impl UDPForwarder {
         stats: Arc<RwLock<ConnectionStats>>,
         running: Arc<RwLock<bool>>,
         target_addr: Arc<RwLock<String>>,
+        sessions: Arc<RwLock<StdHashMap<std::net::SocketAddr, UdpSession>>>,
     ) {
         let mut buffer = vec![0u8; buffer_size];
         
@@ -115,55 +149,50 @@ impl UDPForwarder {
                         }
                     };
                     
-                    // 添加发送重试机制，减少重试次数
-                    let data = &buffer[..len];
-                    let mut send_success = false;
-                    let max_retries = 1; // 减少重试次数到1次
-                    let mut retry_count = 0;
-                    
-                    while retry_count < max_retries && !send_success {
-                        match socket.send_to(data, target).await {
-                            Ok(sent_len) => {
-                                stats.write().await.add_bytes_sent(sent_len as u64);
-                                send_success = true;
-                                if retry_count > 0 {
-                                    info!("UDP转发器 {} 重试发送成功，重试次数: {}", name, retry_count);
+                    // 获取或创建客户端会话（为每个客户端创建单独的上游socket）
+                    let mut sessions_guard = sessions.write().await;
+                    let entry = sessions_guard.entry(client_addr).or_insert_with(|| {
+                        UdpSession::new(client_addr)
+                    });
+                    // 如果没有上游socket或目标变化，则重新连接
+                    if entry.upstream.is_none() || entry.target != target {
+                        match UdpSocket::bind("0.0.0.0:0").await {
+                            Ok(up) => {
+                                if let Err(e) = up.connect(target).await {
+                                    error!("UDP转发器 {} 连接上游失败 {}: {}", name, target, e);
+                                    continue;
                                 }
+                                entry.upstream = Some(up);
+                                entry.target = target;
+                                entry.last_seen = std::time::Instant::now();
+                                // 回程在发送后以短超时同步尝试一次读取，由主循环处理，避免克隆socket
                             }
                             Err(e) => {
-                                retry_count += 1;
-                                if retry_count < max_retries {
-                                    error!("UDP转发器 {} 发送数据失败 (第{}次重试): {}，将在50毫秒后重试", 
-                                        name, retry_count, e);
-                                    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-                                } else {
-                                    error!("UDP转发器 {} 发送数据失败 (已重试{}次): {}", 
-                                        name, max_retries, e);
-                                }
+                                error!("UDP转发器 {} 分配上游socket失败: {}", name, e);
+                                continue;
                             }
                         }
                     }
-
-                    // 最小回程实现：短暂等待来自目标的响应并回发给该客户端
-                    // 为避免阻塞主循环，使用超时包装一次性读取
-                    let mut resp_buf = vec![0u8; buffer_size];
-                    match tokio::time::timeout(tokio::time::Duration::from_millis(200), socket.recv_from(&mut resp_buf)).await {
-                        Ok(Ok((resp_len, src_addr))) => {
-                            if src_addr == target {
-                                // 将目标返回的数据回发给原客户端
-                                if let Err(e) = socket.send_to(&resp_buf[..resp_len], client_addr).await {
-                                    error!("UDP转发器 {} 回发客户端失败: {}", name, e);
-                                } else {
-                                    stats.write().await.add_bytes_sent(resp_len as u64);
+                    // 发送数据到上游
+                    if let Some(up) = &entry.upstream {
+                        if let Err(e) = up.send(&buffer[..len]).await {
+                            log::debug!("UDP转发器 {} 发送到上游失败: {}", name, e);
+                        } else {
+                            entry.last_seen = std::time::Instant::now();
+                            // 短暂等待上游响应并回发给客户端
+                            let mut resp_buf = vec![0u8; buffer_size];
+                            match tokio::time::timeout(tokio::time::Duration::from_millis(200), up.recv(&mut resp_buf)).await {
+                                Ok(Ok(n)) if n > 0 => {
+                                    if let Err(e) = socket.send_to(&resp_buf[..n], client_addr).await {
+                                        log::debug!("UDP转发器 {} 回发客户端失败: {}", name, e);
+                                    } else {
+                                        stats.write().await.add_bytes_sent(n as u64);
+                                    }
                                 }
+                                Ok(Ok(_)) => {}
+                                Ok(Err(e)) => { log::debug!("UDP转发器 {} 上游接收失败: {}", name, e); }
+                                Err(_) => { /* 超时忽略 */ }
                             }
-                        }
-                        Ok(Err(e)) => {
-                            // 接收失败，不中断循环，仅记录
-                            log::debug!("UDP转发器 {} 等待目标响应失败: {}", name, e);
-                        }
-                        Err(_) => {
-                            // 超时，无响应，忽略
                         }
                     }
                 }
@@ -194,11 +223,33 @@ impl UDPForwarder {
         info!("停止UDP转发器: {}", self.name);
         *self.running.write().await = false;
         self.socket.take();
+        // 清理会话
+        self.sessions.write().await.clear();
     }
     
     pub fn get_stats(&self) -> HashMap<String, String> {
         let stats = self.stats.blocking_read();
         stats::get_stats_with_target(&stats, &self.target_addr.blocking_read())
+    }
+}
+
+// 会话结构：为每个客户端维护独立的上游socket与状态
+struct UdpSession {
+    #[allow(dead_code)]
+    client: std::net::SocketAddr,
+    upstream: Option<UdpSocket>,
+    target: std::net::SocketAddr,
+    last_seen: std::time::Instant,
+}
+
+impl UdpSession {
+    fn new(client: std::net::SocketAddr) -> Self {
+        Self {
+            client,
+            upstream: None,
+            target: "0.0.0.0:0".parse().unwrap(),
+            last_seen: std::time::Instant::now(),
+        }
     }
 }
 
