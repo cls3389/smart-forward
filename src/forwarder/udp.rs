@@ -101,6 +101,8 @@ impl UDPForwarder {
         sessions: Arc<RwLock<StdHashMap<std::net::SocketAddr, UdpSession>>>,
     ) {
         let mut buffer = vec![0u8; buffer_size];
+        // 允许在回程任务中共享监听socket
+        let socket = Arc::new(socket);
         
         // 添加客户端地址缓存，避免重复DNS解析
         let mut target_cache: std::collections::HashMap<String, (std::net::SocketAddr, std::time::Instant)> = std::collections::HashMap::new();
@@ -164,6 +166,32 @@ impl UDPForwarder {
                                     error!("UDP转发器 {} 连接上游失败 {}: {}", name, target, e);
                                     continue;
                                 }
+                                let up = Arc::new(up);
+                                // 启动回程任务：独立协程非阻塞读取并回发客户端
+                                let up_reader = up.clone();
+                                let client_addr_clone = client_addr;
+                                let socket_clone = socket.clone();
+                                let name_clone = name.clone();
+                                let stats_clone = stats.clone();
+                                tokio::spawn(async move {
+                                    let mut resp_buf = vec![0u8; 4096];
+                                    loop {
+                                        match up_reader.recv(&mut resp_buf).await {
+                                            Ok(resp_len) => {
+                                                if resp_len == 0 { continue; }
+                                                if let Err(e) = socket_clone.send_to(&resp_buf[..resp_len], client_addr_clone).await {
+                                                    log::debug!("UDP转发器 {} 回程发送到客户端失败: {}", name_clone, e);
+                                                } else {
+                                                    stats_clone.write().await.add_bytes_sent(resp_len as u64);
+                                                }
+                                            }
+                                            Err(e) => {
+                                                log::debug!("UDP转发器 {} 回程接收失败: {}", name_clone, e);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                });
                                 entry.upstream = Some(up);
                                 entry.target = target;
                                 entry.last_seen = std::time::Instant::now();
@@ -181,20 +209,6 @@ impl UDPForwarder {
                             log::debug!("UDP转发器 {} 发送到上游失败: {}", name, e);
                         } else {
                             entry.last_seen = std::time::Instant::now();
-                            // 短暂等待上游响应并回发给客户端
-                            let mut resp_buf = vec![0u8; buffer_size];
-                            match tokio::time::timeout(tokio::time::Duration::from_millis(200), up.recv(&mut resp_buf)).await {
-                                Ok(Ok(n)) if n > 0 => {
-                                    if let Err(e) = socket.send_to(&resp_buf[..n], client_addr).await {
-                                        log::debug!("UDP转发器 {} 回发客户端失败: {}", name, e);
-                                    } else {
-                                        stats.write().await.add_bytes_sent(n as u64);
-                                    }
-                                }
-                                Ok(Ok(_)) => {}
-                                Ok(Err(e)) => { log::debug!("UDP转发器 {} 上游接收失败: {}", name, e); }
-                                Err(_) => { /* 超时忽略 */ }
-                            }
                         }
                     }
                 }
@@ -239,7 +253,7 @@ impl UDPForwarder {
 struct UdpSession {
     #[allow(dead_code)]
     client: std::net::SocketAddr,
-    upstream: Option<UdpSocket>,
+    upstream: Option<Arc<UdpSocket>>,
     target: std::net::SocketAddr,
     last_seen: std::time::Instant,
 }

@@ -1,179 +1,91 @@
-# 智能网络转发器
+# 智能网络转发器（Smart Forward）
 
-一个高性能的智能网络转发器，支持TCP和HTTP协议，具有动态地址更新、连接健康检查和自动故障转移功能。
+一个专注稳定与高性能的多协议网络转发器，支持 TCP/UDP/HTTP，具备动态地址解析、健康检查与智能故障转移。适合个人/家庭内网穿透、RDP/HTTPS/网盘等场景。
 
-## 主要特性
+## 特性
+- 多协议：TCP / UDP / HTTP（80 自动 301 到 HTTPS）
+- 动态地址：支持 A/AAAA 与 TXT 记录（`hostname` -> TXT `IP:PORT`）
+- 健康检查：快速检查 + 定期检查，自动切换最佳目标
+- 会话粘性：同网段优先、本地优先、失败次数与延迟综合权衡
+- UDP 会话映射：客户端独立上游 socket，已实现回程与 60 秒闲置清理
+- 灵活缓冲：全局与规则级 `buffer_size`
 
-### 🔄 动态地址更新
-- **自动检测后端地址变化**：每30秒检查一次后端地址状态
-- **智能重连机制**：当检测到地址变化时，自动关闭旧连接并建立新连接
-- **群晖连接优化**：专门解决群晖长时间连接后卡住的问题
-- **可配置检查间隔**：支持全局和规则级别的配置
+## 快速开始
+```bash
+# 编译
+cargo build --release
 
-### 🏥 连接健康检查
-- **实时连接监控**：跟踪每个连接的活动状态
-- **自动超时清理**：5分钟无活动的连接自动关闭
-- **连接统计信息**：详细的连接数量和流量统计
+# 运行（前台）
+./target/release/smart-forward --config config.yaml
+```
+Windows 批处理脚本也可用：`run.bat` / `run-daemon.bat`。
 
-### 🚀 高性能转发
-- **异步I/O处理**：基于tokio的高性能异步处理
-- **智能缓冲区管理**：支持全局和规则级别的缓冲区配置
-- **多协议支持**：TCP、HTTP和UDP协议支持
-- **UDP转发优化**：专门针对DNS、游戏、实时通信等场景优化
-- **多协议同时转发**：在同一端口上同时支持TCP和UDP协议 ✅ 新增
+> 说明：仓库已精简，仅保留本 README 与必要源码与配置；临时测试脚本与运行日志均已移除，并加入 `.gitignore` 忽略。
 
-### 🔧 智能故障转移
-- **多目标支持**：每个规则支持多个后端目标
-- **自动选择最佳目标**：基于健康状态和延迟自动选择
-- **无缝切换**：故障转移时不影响现有连接
-
-## 解决群晖连接问题
-
-### 问题描述
-群晖设备长时间连接后，后端地址发生变化，但群晖没有重新连接，显示在线但实际上是卡住状态。
-
-### 解决方案
-1. **动态地址检测**：定期检查后端地址状态
-2. **自动连接重建**：检测到地址变化时自动重建连接
-3. **连接健康监控**：实时监控连接状态，及时发现问题
-4. **智能超时处理**：自动清理僵尸连接
-
-### 配置示例
+## 配置示例（config.yaml）
 ```yaml
-# 启用动态地址更新
-dynamic_update:
-  check_interval: 30        # 30秒检查一次
-  connection_timeout: 300   # 5分钟超时
-  auto_reconnect: true      # 启用自动重连
-  health_check_interval: 60 # 健康检查间隔
+logging:
+  level: "info"   # debug/info/warn/error
+  format: "json"  # json/text
+
+network:
+  listen_addr: "0.0.0.0"
+
+buffer_size: 8192  # 全局默认缓冲区
 
 rules:
+  - name: "HTTPS"
+    listen_port: 443
+    protocol: "tcp"
+    buffer_size: 4096
+    targets:
+      - "192.168.5.254:443"
+      - "121.40.167.222:50443"
+      - "stun-443.4.ipto.top"   # 纯域名，TXT 记录解析
+
+  - name: "RDP"
+    listen_port: 99
+    # 未显式指定时，默认同时支持 tcp+udp
+    buffer_size: 32768  # 建议 16K~32K；外网约30Mbps 足够
+    targets:
+      - "192.168.5.12:3389"
+      - "121.40.167.222:57111"
+      - "ewin10.4.ipto.top"
+
   - name: "Drive"
     listen_port: 6690
+    protocol: "tcp"
+    buffer_size: 32768
     targets:
-      - "192.168.5.3:6690"      # 本地地址
-      - "hz.ipto.top:6690"      # 远程地址1
-      - "drive.4.ipto.top"      # 远程地址2
-    dynamic_update:
-      enabled: true
-      check_interval: 15        # 更频繁的检查
+      - "192.168.5.3:6690"
+      - "121.40.167.222:6690"
+      - "drive.4.ipto.top"
 ```
 
-## 安装和运行
+### 协议字段
+- `protocol`: 单协议（`tcp` | `udp` | `http`）
+- `protocols`: 多协议列表（如 `["tcp","udp"]`）；若都未设置，默认启用 `tcp+udp`
 
-### 编译
+### 动态更新（与实现一致）
+- `check_interval`（默认 15s）
+- `connection_timeout`（默认 300s）
+- `auto_reconnect`（默认 true）
+
+## 运行与日志
+- 若未设置 `RUST_LOG`，读取 `logging.level`；格式支持 `json` / `text`
+- 程序自动设置时区 `Asia/Shanghai`
+
+## 本次修复与改进（要点）
+- HTTP 301：精准 `Content-Length`（避免不一致导致的客户端异常）
+- TCP：移除常规路径 `flush()`，提升吞吐
+- 日志：读取 `config.yaml` 的 `level/format`，修正不必要的 `unsafe` 使用
+- UDP：实现会话映射 + 独立异步回程（移除每包等待），提升吞吐；60 秒闲置清理
+- 文档合并：仅保留本 `README.md`，并加入 `.gitignore` 忽略运行日志
+
+## 发布（Windows）
 ```bash
 cargo build --release
+# 产物：target/release/smart-forward.exe
 ```
 
-### 运行
-```bash
-# 前台运行
-./target/release/smart-forward
-
-# 后台运行
-./target/release/smart-forward --daemon
-
-# 指定配置文件
-./target/release/smart-forward --config custom-config.yaml
-```
-
-### Windows运行
-```cmd
-# 前台运行
-smart-forward.exe
-
-# 后台运行
-run-daemon.bat
-
-# 停止后台服务
-stop-daemon.bat
-```
-
-## 配置文件说明
-
-### 基本配置
-- `logging`: 日志配置
-- `network`: 网络配置
-- `buffer_size`: 全局缓冲区大小
-- `dynamic_update`: 动态更新配置
-
-### 规则配置
-- `name`: 规则名称
-- `listen_port`: 监听端口
-- `targets`: 目标地址列表
-- `buffer_size`: 规则专用缓冲区大小
-- `dynamic_update`: 规则级动态更新配置
-
-### 动态更新配置选项（与代码一致）
-- `check_interval`: 检查间隔（秒）。默认 15。
-- `connection_timeout`: 连接超时时间（秒）。默认 300。
-- `auto_reconnect`: 是否启用自动重连。默认 true。
-
-说明：当前代码未实现 `enabled` 与 `health_check_interval` 字段，请勿在配置中使用这两个键。
-
-### 协议字段说明
-- `protocol`: 单协议（`tcp` | `udp` | `http`）
-- `protocols`: 多协议列表（如 `["tcp", "udp"]`）
-- 若两者均未指定，代码默认同时启用 `tcp` 与 `udp`（便于如 RDP 的多协议场景）。
-
-### 日志配置说明
-当前代码将读取 `logging.level` 与 `logging.format`（`json` 或 `text`）用于日志初始化；若环境变量 `RUST_LOG` 未设置，将以配置为准。
-
-## 监控和统计
-
-### 连接统计
-- 总连接数
-- 活跃连接数
-- 发送/接收字节数
-- 连接运行时间
-
-### 地址状态
-- 当前目标地址
-- 最后更新时间
-- 地址变化历史
-
-### 健康状态
-- 目标地址健康状态
-- 连接延迟信息
-- 故障转移次数
-
-## 故障排除
-
-### 常见问题
-1. **连接卡住**：检查动态更新是否启用，检查后端地址状态
-2. **性能问题**：调整缓冲区大小和检查间隔
-3. **连接超时**：检查网络延迟和超时配置
-
-### 日志分析
-- `info`: 正常操作信息
-- `warn`: 警告信息（如连接超时）
-- `error`: 错误信息（如连接失败）
-
-## 性能优化建议
-
-1. **检查间隔**：根据网络环境调整检查间隔
-2. **缓冲区大小**：根据应用需求调整缓冲区
-3. **连接超时**：根据网络延迟调整超时时间
-4. **健康检查**：平衡检查频率和性能影响
-
-## 许可证
-
-MIT License
-
-## 已知问题与修复计划
-
-- HTTP 301 重定向响应的 `Content-Length` 计算方式存在不精确风险
-  - 计划：先构造 body，再以 `body.len()` 设置长度，避免与多字节字符或字符串拼接误差相关的问题。
-
-- TCP 转发中每次写入后调用 `flush()` 降低吞吐
-  - 计划：移除常规数据路径中的 `flush()`，仅在必要场景显式刷新。
-
-- 日志初始化未完全应用 `config.yaml` 中的 `logging` 字段
-  - 计划：读取并应用 `level` 与 `format`（json/text），移除不必要的 `unsafe`。
-
-- UDP 转发当前仅实现客户端到目标的单向转发
-  - 计划：增加从目标读取并回发客户端的最小双向回程支持。
-
-- 文档与实现不一致字段
-  - 说明：`dynamic_update.enabled` 与 `dynamic_update.health_check_interval` 均未在当前代码中实现，文档已修正；如需该能力将于后续版本提供。
+可选择将 `smart-forward.exe` 与 `config.yaml` 放入同目录直接运行，或按需封装为服务/打包分发。

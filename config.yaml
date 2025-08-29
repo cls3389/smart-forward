@@ -26,9 +26,8 @@ rules:
   # RDP转发规则
   - name: "RDP"
     listen_port: 99
-    # 默认同时支持TCP和UDP协议，无需指定 protocols
-    # protocols: ["tcp", "udp"]  # 可选：只有需要自定义时才指定
-    buffer_size: 16384    # RDP专用缓冲区 (16KB，平衡性能和内存)
+ #   protocol: "tcp" 
+    buffer_size: 32768    # RDP UDP专用大缓冲区 (64KB，适合视频流)
     targets:
       - "192.168.5.12:3389"
       - "121.40.167.222:57111"

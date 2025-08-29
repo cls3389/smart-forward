@@ -113,6 +113,9 @@ impl TCPForwarder {
             }
         };
         
+        // 优化TCP：降低延迟
+        let _ = client_stream.set_nodelay(true);
+
         // 使用公共的带超时和重试的连接函数，增加超时时间适应外网地址
         let mut target_stream = match crate::utils::connect_with_timeout_and_retry(
             target, 
@@ -126,6 +129,9 @@ impl TCPForwarder {
                 return Err(e);
             }
         };
+
+        // 目标侧同样禁用Nagle算法
+        let _ = target_stream.set_nodelay(true);
         
         let (mut client_read, mut client_write) = client_stream.split();
         let (mut target_read, mut target_write) = target_stream.split();
