@@ -1,3 +1,5 @@
+smart-forward.out
+smart-forward.err
 # Rust编译产物
 /target/
 Cargo.lock
