@@ -105,12 +105,20 @@ stop-daemon.bat
 - `buffer_size`: 规则专用缓冲区大小
 - `dynamic_update`: 规则级动态更新配置
 
-### 动态更新配置选项
-- `enabled`: 是否启用动态更新
-- `check_interval`: 检查间隔（秒）
-- `connection_timeout`: 连接超时时间（秒）
-- `auto_reconnect`: 是否启用自动重连
-- `health_check_interval`: 健康检查间隔（秒）
+### 动态更新配置选项（与代码一致）
+- `check_interval`: 检查间隔（秒）。默认 15。
+- `connection_timeout`: 连接超时时间（秒）。默认 300。
+- `auto_reconnect`: 是否启用自动重连。默认 true。
+
+说明：当前代码未实现 `enabled` 与 `health_check_interval` 字段，请勿在配置中使用这两个键。
+
+### 协议字段说明
+- `protocol`: 单协议（`tcp` | `udp` | `http`）
+- `protocols`: 多协议列表（如 `["tcp", "udp"]`）
+- 若两者均未指定，代码默认同时启用 `tcp` 与 `udp`（便于如 RDP 的多协议场景）。
+
+### 日志配置说明
+当前代码将读取 `logging.level` 与 `logging.format`（`json` 或 `text`）用于日志初始化；若环境变量 `RUST_LOG` 未设置，将以配置为准。
 
 ## 监控和统计
 
@@ -152,3 +160,20 @@ stop-daemon.bat
 ## 许可证
 
 MIT License
+
+## 已知问题与修复计划
+
+- HTTP 301 重定向响应的 `Content-Length` 计算方式存在不精确风险
+  - 计划：先构造 body，再以 `body.len()` 设置长度，避免与多字节字符或字符串拼接误差相关的问题。
+
+- TCP 转发中每次写入后调用 `flush()` 降低吞吐
+  - 计划：移除常规数据路径中的 `flush()`，仅在必要场景显式刷新。
+
+- 日志初始化未完全应用 `config.yaml` 中的 `logging` 字段
+  - 计划：读取并应用 `level` 与 `format`（json/text），移除不必要的 `unsafe`。
+
+- UDP 转发当前仅实现客户端到目标的单向转发
+  - 计划：增加从目标读取并回发客户端的最小双向回程支持。
+
+- 文档与实现不一致字段
+  - 说明：`dynamic_update.enabled` 与 `dynamic_update.health_check_interval` 均未在当前代码中实现，文档已修正；如需该能力将于后续版本提供。

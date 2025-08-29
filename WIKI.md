@@ -73,19 +73,18 @@ network:
 # 全局缓冲区大小 (16KB)
 buffer_size: 16384
 
-# 全局动态更新配置
+# 全局动态更新配置（与实现一致）
 dynamic_update:
-  check_interval: 30      # 检查间隔（秒）
-  connection_timeout: 300 # 连接超时（秒）
-  auto_reconnect: true    # 自动重连
-  health_check_interval: 60 # 健康检查间隔（秒）
+  check_interval: 15      # 检查间隔（秒），默认 15
+  connection_timeout: 300 # 连接超时（秒），默认 300
+  auto_reconnect: true    # 自动重连，默认 true
 
 # 转发规则
 rules:
   - name: "规则名称"
     listen_port: 443
     protocol: "tcp"    # 或 "udp", "http"
-    protocols: ["tcp", "udp"]  # 多协议支持
+    protocols: ["tcp", "udp"]  # 多协议支持。若两者均未设置，默认启用 tcp+udp
     buffer_size: 8192  # 专用缓冲区大小
     targets:
       - "192.168.1.100:443"
@@ -148,7 +147,7 @@ targets:
     - "192.168.1.100:3389"
 ```
 
-#### HTTP 重定向
+#### HTTP 重定向（80 -> 443）
 ```yaml
 - name: "HTTP重定向"
   listen_port: 80
@@ -175,6 +174,8 @@ targets:
 - **TXT 记录**: 支持通过 TXT 记录配置 IP:PORT
 - **定期更新**: 可配置检查间隔
 - **DNS 服务器**: 使用阿里云 DNS (223.5.5.5, 223.6.6.6)
+
+注意：IPv6 目标建议使用标准格式 `[::1]:443`，避免与 `hostname:port` 解析冲突。
 
 ### 缓冲区配置
 
@@ -349,7 +350,7 @@ docker run -d --name forwarder -p 80:80 -p 443:443 smart-forwarder
 ```yaml
 logging:
   level: "debug"  # 启用详细日志
-  format: "text"  # 便于阅读的格式
+  format: "text"  # 便于阅读的格式（或 "json"）
 ```
 
 关键日志信息：
@@ -496,4 +497,4 @@ A: 目前支持基于健康状态和延迟的智能选择，未来可能添加�
 
 ---
 
-*最后更新: 2025-08-28*
+*最后更新: 2025-08-29*
