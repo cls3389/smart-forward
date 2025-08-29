@@ -83,6 +83,7 @@ impl UDPForwarder {
                     for client in to_remove {
                         sessions_write.remove(&client);
                     }
+                    info!("UDP会话清理: 已执行清理，当前会话数 {}", sessions_write.len());
                 }
             }
         });
@@ -152,6 +153,7 @@ impl UDPForwarder {
                     // 获取或创建客户端会话（为每个客户端创建单独的上游socket）
                     let mut sessions_guard = sessions.write().await;
                     let entry = sessions_guard.entry(client_addr).or_insert_with(|| {
+                        info!("UDP会话创建: 客户端 {}", client_addr);
                         UdpSession::new(client_addr)
                     });
                     // 如果没有上游socket或目标变化，则重新连接
