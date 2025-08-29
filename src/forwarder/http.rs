@@ -75,25 +75,23 @@ impl HTTPForwarder {
             format!("https://{}{}", host, path)
         };
         
-        // 构建重定向响应
+        // 构建响应 body 并精确计算 Content-Length
+        let body = format!(
+            "<!DOCTYPE html>\r\n<html>\r\n<head><title>301 Moved Permanently</title></head>\r\n\
+             <body>\r\n<h1>Moved Permanently</h1>\r\n<p>The document has moved <a href=\"{}\">here</a>.</p>\r\n\
+             </body>\r\n</html>",
+            redirect_url
+        );
         let response = format!(
             "HTTP/1.1 301 Moved Permanently\r\n\
              Location: {}\r\n\
              Content-Type: text/html; charset=utf-8\r\n\
              Content-Length: {}\r\n\
              Connection: close\r\n\
-             \r\n\
-             <!DOCTYPE html>\r\n\
-             <html>\r\n\
-             <head><title>301 Moved Permanently</title></head>\r\n\
-             <body>\r\n\
-             <h1>Moved Permanently</h1>\r\n\
-             <p>The document has moved <a href=\"{}\">here</a>.</p>\r\n\
-             </body>\r\n\
-             </html>",
+             \r\n{}",
             redirect_url,
-            95 + redirect_url.len(), // Content-Length
-            redirect_url
+            body.len(),
+            body
         );
         
         // 发送响应

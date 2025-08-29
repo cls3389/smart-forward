@@ -180,7 +180,6 @@ impl TCPForwarder {
             }
             
             writer.write_all(&buffer[..n]).await?;
-            writer.flush().await?;
             
             if is_sent {
                 stats.write().await.add_bytes_sent(n as u64);

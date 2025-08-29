@@ -51,36 +51,8 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<()> {
     // 设置时区为北京时间
-    unsafe {
-        std::env::set_var("TZ", "Asia/Shanghai");
-    }
-    
-    // 如果环境变量中没有设置RUST_LOG，则设置为info级别
-    if std::env::var("RUST_LOG").is_err() {
-        unsafe {
-            std::env::set_var("RUST_LOG", "info");
-        }
-    }
-    
-    // 初始化自定义日志格式（显示北京时间，移除模块路径显示）
-    env_logger::Builder::from_default_env()
-        .format(|buf, record| {
-            use std::io::Write;
-            use chrono::prelude::*;
-            
-            // 获取北京时间
-            let beijing_time = Local::now();
-            
-            writeln!(
-                buf,
-                "[{} {}] {}",
-                beijing_time.format("%Y-%m-%d %H:%M:%S"),
-                record.level(),
-                record.args()
-            )
-        })
-        .init();
-    
+    std::env::set_var("TZ", "Asia/Shanghai");
+
     let args = Args::parse();
     
     // 后台运行处理
@@ -88,6 +60,45 @@ async fn main() -> Result<()> {
         daemonize(&args.pid_file)?;
     }
     
+    // 加载配置
+    let config = Config::load_from_file(&args.config)?;
+
+    // 初始化日志：优先使用配置中的 level/format，若环境已设置 RUST_LOG 则尊重环境
+    if std::env::var("RUST_LOG").is_err() {
+        std::env::set_var("RUST_LOG", &config.logging.level);
+    }
+
+    let mut logger_builder = env_logger::Builder::from_default_env();
+    let is_json = config.logging.format.eq_ignore_ascii_case("json");
+    if is_json {
+        logger_builder.format(|buf, record| {
+            use std::io::Write;
+            use chrono::prelude::*;
+            let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+            writeln!(
+                buf,
+                "{{\"ts\":\"{}\",\"level\":\"{}\",\"msg\":{}}}",
+                ts,
+                record.level(),
+                serde_json::to_string(&record.args().to_string()).unwrap_or_else(|_| "\"\"".to_string())
+            )
+        });
+    } else {
+        logger_builder.format(|buf, record| {
+            use std::io::Write;
+            use chrono::prelude::*;
+            let beijing_time = Local::now();
+            writeln!(
+                buf,
+                "[{} {}] {}",
+                beijing_time.format("%Y-%m-%d %H:%M:%S"),
+                record.level(),
+                record.args()
+            )
+        });
+    }
+    logger_builder.init();
+
     // 显示启动信息
     println!("智能转发器 v0.1.0");
     println!("配置文件: {}", args.config.display());
@@ -101,9 +112,6 @@ async fn main() -> Result<()> {
     println!("");
     
     info!("启动智能转发器...");
-    
-    // 加载配置
-    let config = Config::load_from_file(&args.config)?;
     
     // 如果只是验证配置，则显示配置信息并退出
     if args.validate_config {

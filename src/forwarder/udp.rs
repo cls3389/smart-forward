@@ -76,7 +76,7 @@ impl UDPForwarder {
             }
             
             match socket.recv_from(&mut buffer).await {
-                Ok((len, _client_addr)) => {
+                Ok((len, client_addr)) => {
                     stats.write().await.add_bytes_received(len as u64);
                     
                     let target_addr_str = target_addr.read().await.clone();
@@ -141,6 +141,29 @@ impl UDPForwarder {
                                         name, max_retries, e);
                                 }
                             }
+                        }
+                    }
+
+                    // 最小回程实现：短暂等待来自目标的响应并回发给该客户端
+                    // 为避免阻塞主循环，使用超时包装一次性读取
+                    let mut resp_buf = vec![0u8; buffer_size];
+                    match tokio::time::timeout(tokio::time::Duration::from_millis(200), socket.recv_from(&mut resp_buf)).await {
+                        Ok(Ok((resp_len, src_addr))) => {
+                            if src_addr == target {
+                                // 将目标返回的数据回发给原客户端
+                                if let Err(e) = socket.send_to(&resp_buf[..resp_len], client_addr).await {
+                                    error!("UDP转发器 {} 回发客户端失败: {}", name, e);
+                                } else {
+                                    stats.write().await.add_bytes_sent(resp_len as u64);
+                                }
+                            }
+                        }
+                        Ok(Err(e)) => {
+                            // 接收失败，不中断循环，仅记录
+                            log::debug!("UDP转发器 {} 等待目标响应失败: {}", name, e);
+                        }
+                        Err(_) => {
+                            // 超时，无响应，忽略
                         }
                     }
                 }
