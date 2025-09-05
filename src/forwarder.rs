@@ -74,7 +74,13 @@ impl TCPForwarder {
                             }
                         });
                     }
-                    Err(_) => break,
+                    Err(e) => {
+                        // 监听错误，记录日志但继续运行
+                        log::warn!("TCP监听器 {} 接受连接失败: {}", name, e);
+                        // 短暂延迟后继续，避免快速重试
+                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                        continue;
+                    }
                 }
             }
         });
@@ -347,7 +353,13 @@ impl UDPForwarder {
                             }
                         }
                     }
-                    Err(_) => break,
+                    Err(e) => {
+                        // UDP接收错误，记录日志但继续运行
+                        log::warn!("UDP监听器接收数据失败: {}", e);
+                        // 短暂延迟后继续，避免快速重试
+                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                        continue;
+                    }
                 }
             }
         });

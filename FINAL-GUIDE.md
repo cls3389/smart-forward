@@ -28,9 +28,14 @@ src/
 ### 🎯 **核心特性**
 - **多协议**: TCP / UDP / HTTP（80 自动 301 到 HTTPS）
 - **动态地址**: 支持 A/AAAA 与 TXT 记录解析
-- **健康检查**: TCP连接检查 + UDP DNS解析检查
+- **健康检查**: TCP连接检查 + UDP智能检查
 - **会话粘性**: 严格按配置顺序选择，保持连接稳定性
 - **智能切换**: 1次失败立即切换，15秒健康检查间隔
+
+### 🔧 **UDP健康检查机制**
+- **IP地址格式** (`192.168.1.100:3389`): 直接跳过检查，假设可用
+- **域名格式** (`server.com:7777`): 执行DNS解析验证
+- **设计原理**: IP已验证格式，域名需确保可解析性
 
 ---
 
@@ -97,11 +102,9 @@ Linux:   ./target/release/smart-forward
 
 ### 📚 **文档文件**
 ```
-主文档:   README.md                  # 项目概览和功能说明
-构建指南: BUILD-GUIDE.md             # 详细构建流程
-UDP说明:  UDP-HEALTH-CHECK.md        # UDP健康检查机制
-WSL指南:  wsl-build-guide.md         # WSL2 Docker构建
-最终指南: FINAL-GUIDE.md             # 当前文档
+主文档:     README.md                # 项目概览和功能说明
+技术文档:   TECHNICAL-DOCS.md        # 架构设计和实现细节
+使用指南:   FINAL-GUIDE.md           # 当前文档 - 完整使用指南
 ```
 
 ### 🚀 **运行脚本**

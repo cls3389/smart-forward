@@ -455,9 +455,8 @@ cargo build --release
 
 ### 完整部署指南
 详细的编译、部署和运行指南：
-- **[BUILD-GUIDE.md](BUILD-GUIDE.md)** - 完整构建指南
-- **[UDP-HEALTH-CHECK.md](UDP-HEALTH-CHECK.md)** - UDP健康检查说明
-- **[wsl-build-guide.md](wsl-build-guide.md)** - WSL2专用指南
+- **[FINAL-GUIDE.md](FINAL-GUIDE.md)** - 完整使用指南（编译、部署、运行）
+- **[TECHNICAL-DOCS.md](TECHNICAL-DOCS.md)** - 技术文档（架构设计、实现细节）
 
 可选择将 `smart-forward.exe` 与 `config.yaml` 放入同目录直接运行，或按需封装为服务/打包分发。
 
