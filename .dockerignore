@@ -1,0 +1,15 @@
+# 忽略不必要的文件，优化 Docker 构建
+target/
+.git/
+.gitignore
+*.md
+LICENSE
+.vscode/
+.idea/
+*.bat
+*.sh
+docker-compose.yml
+Dockerfile
+.dockerignore
+logs/
+*.log

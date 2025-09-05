@@ -2,7 +2,6 @@ mod config;
 mod forwarder;
 mod common;
 mod utils;
-mod stats;
 
 use anyhow::Result;
 use clap::Parser;
@@ -73,7 +72,6 @@ async fn main() -> Result<()> {
     if is_json {
         logger_builder.format(|buf, record| {
             use std::io::Write;
-            use chrono::prelude::*;
             let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
             writeln!(
                 buf,
@@ -86,8 +84,7 @@ async fn main() -> Result<()> {
     } else {
         logger_builder.format(|buf, record| {
             use std::io::Write;
-            use chrono::prelude::*;
-            let beijing_time = Local::now();
+            let beijing_time = chrono::Local::now();
             writeln!(
                 buf,
                 "[{} {}] {}",

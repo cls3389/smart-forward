@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 use trust_dns_resolver::{
@@ -42,64 +43,6 @@ impl ConnectionStats {
     }
 }
 
-// 新增：带超时和重试的TCP连接函数
-pub async fn connect_with_timeout_and_retry(target: SocketAddr, max_retries: u32, timeout_secs: u64, retry_delay_secs: u64, log_prefix: &str) -> Result<tokio::net::TcpStream> {
-    let mut retry_count = 0;
-    
-    while retry_count < max_retries {
-        match tokio::time::timeout(
-            tokio::time::Duration::from_secs(timeout_secs),
-            tokio::net::TcpStream::connect(target)
-        ).await {
-            Ok(Ok(stream)) => {
-                if retry_count > 0 {
-                    log::info!("{} 连接重试成功，重试次数: {}", log_prefix, retry_count);
-                }
-                return Ok(stream);
-            }
-            Ok(Err(e)) => {
-                retry_count += 1;
-                let error_msg = e.to_string();
-                let is_network_error = error_msg.contains("10065") || error_msg.contains("10061") ||
-                                      error_msg.contains("网络不可达") || error_msg.contains("拒绝连接");
-                
-                if retry_count < max_retries {
-                    if is_network_error {
-                        log::debug!("{} 连接到目标失败 {} (第{}次重试): {}，将在{}秒后重试", 
-                            log_prefix, target, retry_count, e, retry_delay_secs);
-                    } else {
-                        log::warn!("{} 连接到目标失败 {} (第{}次重试): {}，将在{}秒后重试", 
-                            log_prefix, target, retry_count, e, retry_delay_secs);
-                    }
-                    tokio::time::sleep(tokio::time::Duration::from_secs(retry_delay_secs)).await;
-                } else {
-                    if is_network_error {
-                        log::debug!("{} 连接到目标失败 {} (已重试{}次): {}", 
-                            log_prefix, target, max_retries, e);
-                    } else {
-                        log::error!("{} 连接到目标失败 {} (已重试{}次): {}", 
-                            log_prefix, target, max_retries, e);
-                    }
-                    return Err(anyhow::anyhow!("连接目标失败: {}", e));
-                }
-            }
-            Err(_) => {
-                retry_count += 1;
-                if retry_count < max_retries {
-                    log::warn!("{} 连接到目标超时 {} (第{}次重试)，将在{}秒后重试", 
-                        log_prefix, target, retry_count, retry_delay_secs);
-                    tokio::time::sleep(tokio::time::Duration::from_secs(retry_delay_secs)).await;
-                } else {
-                    log::error!("{} 连接到目标超时 {} (已重试{}次)", 
-                        log_prefix, target, max_retries);
-                    return Err(anyhow::anyhow!("连接目标超时")); 
-                }
-            }
-        }
-    }
-    
-    Err(anyhow::anyhow!("无法建立到目标的连接"))
-}
 
 pub async fn resolve_target(target: &str) -> Result<SocketAddr> {
     // 1. 尝试直接解析为SocketAddr (IP:PORT格式)
@@ -239,8 +182,8 @@ pub async fn test_connection(target: &str) -> Result<Duration> {
     let addr = resolve_target(target).await?;
     let start = Instant::now();
     
-    // 增加超时时间到8秒，适应外网地址的延迟
-    match tokio::time::timeout(Duration::from_secs(8), tokio::net::TcpStream::connect(addr)).await {
+    // 统一使用5秒超时时间
+    match tokio::time::timeout(Duration::from_secs(5), tokio::net::TcpStream::connect(addr)).await {
         Ok(Ok(_)) => Ok(start.elapsed()),
         Ok(Err(e)) => Err(anyhow::anyhow!("连接失败 {}: {}", target, e)),
         Err(_) => Err(anyhow::anyhow!("连接超时: {}", target)),
@@ -249,3 +192,30 @@ pub async fn test_connection(target: &str) -> Result<Duration> {
 
 // UDP连接测试函数
 // 已移除: UDP连通性测试函数（不再使用，避免误判）
+
+/// 获取标准统计信息的公共函数
+pub fn get_standard_stats(stats: &ConnectionStats) -> HashMap<String, String> {
+    let mut result = HashMap::new();
+    
+    result.insert("connections".to_string(), stats.connections.to_string());
+    result.insert("bytes_sent".to_string(), stats.bytes_sent.to_string());
+    result.insert("bytes_received".to_string(), stats.bytes_received.to_string());
+    result.insert("uptime".to_string(), format!("{:?}", stats.get_uptime()));
+    
+    // 增强的性能指标
+    let uptime_secs = stats.get_uptime().as_secs() as f64;
+    if uptime_secs > 0.0 {
+        let avg_throughput_mbps = (stats.bytes_sent + stats.bytes_received) as f64 / (1024.0 * 1024.0) / uptime_secs;
+        result.insert("avg_throughput_mbps".to_string(), format!("{:.2}", avg_throughput_mbps));
+        result.insert("connections_per_hour".to_string(), format!("{:.1}", stats.connections as f64 * 3600.0 / uptime_secs));
+    }
+    
+    result
+}
+
+/// 获取带目标地址的统计信息
+pub fn get_stats_with_target(stats: &ConnectionStats, target_addr: &str) -> HashMap<String, String> {
+    let mut result = get_standard_stats(stats);
+    result.insert("target_addr".to_string(), target_addr.to_string());
+    result
+}

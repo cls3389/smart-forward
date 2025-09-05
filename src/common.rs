@@ -3,11 +3,10 @@ use crate::utils::resolve_target;
 use anyhow::Result;
 use dashmap::DashMap;
 use log::{error, info, warn};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use local_ip_address::{local_ip, list_afinet_netifas};
 
 #[derive(Debug, Clone)]
 pub struct TargetInfo {
@@ -16,12 +15,10 @@ pub struct TargetInfo {
     pub healthy: bool,
     pub last_check: Instant,
     pub fail_count: u32,
-    pub latency: Option<Duration>,
 }
 
 #[derive(Debug)]
 pub struct RuleInfo {
-    pub rule: Config,
     pub targets: Vec<TargetInfo>,
     pub selected_target: Option<TargetInfo>,
     pub last_update: Instant,
@@ -32,82 +29,35 @@ pub struct CommonManager {
     config: Config,
     target_cache: Arc<DashMap<String, TargetInfo>>,
     rule_infos: Arc<RwLock<DashMap<String, RuleInfo>>>,
-    local_interfaces: Arc<Vec<Ipv4Addr>>, // 缓存本地网络接口
 }
 
 impl CommonManager {
     pub fn new(config: Config) -> Self {
-        let local_interfaces = Arc::new(Self::get_local_interfaces());
         Self {
             config,
             target_cache: Arc::new(DashMap::new()),
             rule_infos: Arc::new(RwLock::new(DashMap::new())),
-            local_interfaces,
         }
     }
     
-    // 获取本地网络接口地址
-    pub fn get_local_interfaces() -> Vec<Ipv4Addr> {
-        let mut local_ips = Vec::new();
-        
-        // 方法1: 获取默认路由使用的IP地址
-        if let Ok(ip) = local_ip() {
-            if let IpAddr::V4(ipv4) = ip {
-                local_ips.push(ipv4);
-            }
-        }
-        
-        // 方法2: 获取所有网络接口的IP地址
-        if let Ok(network_interfaces) = list_afinet_netifas() {
-            for (name, ip) in network_interfaces {
-                if let IpAddr::V4(ipv4) = ip {
-                    // 排除回环地址
-                    if !ipv4.is_loopback() {
-                        if !local_ips.contains(&ipv4) {
-                            local_ips.push(ipv4);
-                            info!("检测到网络接口 {}: {}", name, ipv4);
-                        }
-                    }
-                }
-            }
-        }
-        
-        // 如果没有检测到任何地址，使用默认的内网地址作为fallback
-        if local_ips.is_empty() {
-            warn!("未检测到本地网络接口，使用默认内网地址");
-            local_ips = vec![
-                Ipv4Addr::new(192, 168, 0, 1), 
-                Ipv4Addr::new(10, 0, 0, 1),
-                Ipv4Addr::new(172, 16, 0, 1)
-            ];
-        } else {
-            info!("检测到本地网络接口: {:?}", local_ips);
-        }
-        
-        local_ips
-    }
     
     
     pub async fn initialize(&self) -> Result<()> {
-        // 1. 使用缓存的本地网络接口地址
-        let local_interfaces = &self.local_interfaces;
-        
-        // 2. DNS解析阶段：解析所有目标地址
+        // 1. DNS解析阶段：解析所有目标地址
         for rule in &self.config.rules {
-            if let Err(e) = self.initialize_rule_targets(local_interfaces, rule).await {
+            if let Err(e) = self.initialize_rule_targets(rule).await {
                 error!("规则 {} DNS解析失败: {}", rule.name, e);
             }
         }
         
-        // 3. 初始健康检查阶段：批量并发检查所有目标
-        // 使用快速健康检查（缩短超时时间）
-        let health_check_result = Self::quick_batch_health_check(&self.target_cache, &local_interfaces, &self.config).await;
-        info!("初始快速健康检查完成: {}", health_check_result);
+        // 2. 初始健康检查阶段：批量并发检查所有目标
+        let health_check_result = Self::quick_batch_health_check(&self.target_cache, &self.config).await;
+        info!("初始健康检查完成: {}", health_check_result);
         
-        // 4. 选择最优地址阶段：为每个规则选择最佳目标
-        Self::update_rule_targets(&self.rule_infos, &self.target_cache, local_interfaces).await;
+        // 3. 选择最优地址阶段：为每个规则选择最佳目标
+        Self::update_rule_targets(&self.rule_infos, &self.target_cache, &self.config).await;
         
-        // 5. 验证初始化结果
+        // 4. 验证初始化结果
         let rule_infos = self.rule_infos.read().await;
         let mut available_rules = 0;
         
@@ -125,13 +75,13 @@ impl CommonManager {
         
         info!("启动完成: {} 个规则可用", available_rules);
         
-        // 6. 启动持续健康检查任务
+        // 5. 启动持续健康检查任务
         self.start_health_check_task().await;
         
         Ok(())
     }
     
-    async fn initialize_rule_targets(&self, local_interfaces: &[Ipv4Addr], rule: &crate::config::ForwardRule) -> Result<()> {
+    async fn initialize_rule_targets(&self, rule: &crate::config::ForwardRule) -> Result<()> {
         let mut targets = Vec::new();
         
         for (_priority, target_str) in rule.targets.iter().enumerate() {
@@ -143,17 +93,10 @@ impl CommonManager {
                         healthy: true,
                         last_check: Instant::now(),
                         fail_count: 0,
-                        latency: None,
                     };
-                    
-                    // 判断是否为内网地址
-                    let is_local = is_same_subnet(local_interfaces, resolved_addr.ip());
                     
                     targets.push(target_info.clone());
                     self.target_cache.insert(target_str.clone(), target_info);
-                    
-                    info!("目标 {} 解析为 {} ({})", target_str, resolved_addr, 
-                          if is_local { "内网地址" } else { "外网地址" });
                 }
                 Err(e) => {
                     error!("无法解析目标 {}: {}", target_str, e);
@@ -162,7 +105,6 @@ impl CommonManager {
         }
         
         let rule_info = RuleInfo {
-            rule: self.config.clone(),
             targets,
             selected_target: None,
             last_update: Instant::now(),
@@ -175,7 +117,6 @@ impl CommonManager {
     async fn start_health_check_task(&self) {
         let target_cache = self.target_cache.clone();
         let rule_infos = self.rule_infos.clone();
-        let local_interfaces = self.local_interfaces.clone();
         let config = self.config.clone(); // 传递配置信息
         
         tokio::spawn(async move {
@@ -200,7 +141,7 @@ impl CommonManager {
                 let current_status = Self::batch_health_check(&target_cache, &config).await;
                 
                 // 4. 更新规则目标选择
-                Self::update_rule_targets(&rule_infos, &target_cache, &local_interfaces).await;
+                Self::update_rule_targets(&rule_infos, &target_cache, &config).await;
                 
                 // 只在状态变化时记录日志，减少重复输出
                 if last_status != Some(current_status.clone()) {
@@ -257,19 +198,10 @@ impl CommonManager {
     
     
     // 快速健康检查 - 启动时使用，缩短超时时间，根据规则配置智能选择协议
-    async fn quick_batch_health_check(target_cache: &Arc<DashMap<String, TargetInfo>>, local_interfaces: &[Ipv4Addr], config: &Config) -> String {
-        let mut targets: Vec<_> = target_cache.iter().map(|entry| {
+    async fn quick_batch_health_check(target_cache: &Arc<DashMap<String, TargetInfo>>, config: &Config) -> String {
+        let targets: Vec<_> = target_cache.iter().map(|entry| {
             (entry.key().clone(), entry.value().clone())
         }).collect();
-        
-        // 按网段优先级排序：内网地址优先检查
-        targets.sort_by(|(_, a_info), (_, b_info)| {
-            let a_is_local = is_same_subnet(local_interfaces, a_info.resolved.ip());
-            let b_is_local = is_same_subnet(local_interfaces, b_info.resolved.ip());
-            
-            // 内网地址优先
-            b_is_local.cmp(&a_is_local)
-        });
         
         // 建立目标地址到规则的映射，用于决定健康检查协议
         let mut target_to_protocol = std::collections::HashMap::new();
@@ -286,26 +218,30 @@ impl CommonManager {
             }
         }
         
-        // 并发执行健康检查，使用更短的超时时间
+        // 并发执行健康检查，使用统一的超时时间
         let mut tasks = Vec::new();
         for (target_str, target_info) in targets {
-            let local_interfaces = local_interfaces.to_vec(); // 克隆到task中
             let protocol_to_check = target_to_protocol.get(&target_str).copied().unwrap_or("tcp");
             
             let task = tokio::spawn(async move {
                 let start = Instant::now();
                 
-                // 根据地址类型选择适合的超时时间
-                let timeout_duration = if is_same_subnet(&local_interfaces, target_info.resolved.ip()) {
-                    Duration::from_secs(3) // 内网地址使用3秒超时
-                } else {
-                    Duration::from_secs(8) // 外网地址使用8秒超时
-                };
+                // 使用统一的超时时间
+                let timeout_duration = Duration::from_secs(5); // 统一使用5秒超时
                 
                 // 根据规则配置决定健康检查协议
                 let result = if protocol_to_check == "udp" {
-                    // 移除UDP连通性检测：跳过探测，避免不准确结果
-                    Ok(Duration::from_millis(0))
+                    // UDP协议：智能健康检查
+                    if target_str.parse::<std::net::SocketAddr>().is_ok() {
+                        // 直接IP:PORT格式，跳过检查（无法有效验证UDP服务）
+                        Ok(Duration::from_millis(0))
+                    } else {
+                        // 域名格式，尝试DNS解析
+                        match crate::utils::resolve_target(&target_str).await {
+                            Ok(_) => Ok(Duration::from_millis(0)), // DNS解析成功即可
+                            Err(e) => Err(anyhow::anyhow!("UDP目标解析失败: {}", e)),
+                        }
+                    }
                 } else {
                     // TCP测试使用动态超时时间
                     tokio::time::timeout(
@@ -330,9 +266,8 @@ impl CommonManager {
                 let old_healthy = target_info.healthy;
                 
                 match result {
-                    Ok(latency) => {
+                    Ok(_) => {
                         target_info.healthy = true;
-                        target_info.latency = Some(latency);
                         target_info.fail_count = 0; // 成功时重置失败计数
                         target_info.last_check = Instant::now();
                         success_count += 1;
@@ -346,12 +281,11 @@ impl CommonManager {
                         target_info.fail_count += 1;
                         target_info.last_check = Instant::now();
                         
-                        // 简单的失败阈值：失败2次就标记为不健康
-                        const FAIL_THRESHOLD: u32 = 2;
-                        if target_info.fail_count >= FAIL_THRESHOLD {
+                        // 失败1次就标记为不健康，快速切换
+                        if target_info.fail_count >= 1 {
                             if old_healthy {
                                 target_info.healthy = false;
-                                status_changes.push(format!("{} 异常（连续失败{}次）", target_str, target_info.fail_count));
+                                status_changes.push(format!("{} 异常", target_str));
                             }
                         }
                         
@@ -410,8 +344,17 @@ impl CommonManager {
                 
                 // 根据规则配置决定健康检查协议
                 let result = if protocol_to_check == "udp" {
-                    // 移除UDP连通性检测：直接视为通过，避免误判
-                    Ok(Duration::from_millis(0))
+                    // UDP协议：智能健康检查
+                    if target_str.parse::<std::net::SocketAddr>().is_ok() {
+                        // 直接IP:PORT格式，跳过检查（无法有效验证UDP服务）
+                        Ok(Duration::from_millis(0))
+                    } else {
+                        // 域名格式，尝试DNS解析
+                        match crate::utils::resolve_target(&target_str).await {
+                            Ok(_) => Ok(Duration::from_millis(0)), // DNS解析成功即可
+                            Err(e) => Err(anyhow::anyhow!("UDP目标解析失败: {}", e)),
+                        }
+                    }
                 } else {
                     crate::utils::test_connection(&target_str).await
                 };
@@ -432,9 +375,8 @@ impl CommonManager {
                 let old_healthy = target_info.healthy;
                 
                 match result {
-                    Ok(latency) => {
+                    Ok(_) => {
                         target_info.healthy = true;
-                        target_info.latency = Some(latency);
                         target_info.fail_count = 0; // 成功时重置失败计数
                         target_info.last_check = Instant::now();
                         success_count += 1;
@@ -448,12 +390,11 @@ impl CommonManager {
                         target_info.fail_count += 1;
                         target_info.last_check = Instant::now();
                         
-                        // 简单的失败阈值：失败2次就标记为不健康
-                        const FAIL_THRESHOLD: u32 = 2;
-                        if target_info.fail_count >= FAIL_THRESHOLD {
+                        // 失败1次就标记为不健康，快速切换
+                        if target_info.fail_count >= 1 {
                             if old_healthy {
                                 target_info.healthy = false;
-                                status_changes.push(format!("{} 异常（连续失败{}次）", target_str, target_info.fail_count));
+                                status_changes.push(format!("{} 异常", target_str));
                             }
                         }
                         
@@ -484,7 +425,7 @@ impl CommonManager {
     async fn update_rule_targets(
         rule_infos: &Arc<RwLock<DashMap<String, RuleInfo>>>,
         target_cache: &Arc<DashMap<String, TargetInfo>>,
-        local_interfaces: &[Ipv4Addr],
+        config: &Config,
     ) {
         let rule_infos_write = rule_infos.write().await;
         
@@ -492,8 +433,8 @@ impl CommonManager {
             let rule_name = entry.key().clone();
             let rule_info = entry.value_mut();
             
-            // 获取当前规则的目标列表
-            let rule_targets = if let Some(rule) = rule_info.rule.rules.iter().find(|r| r.name == rule_name) {
+            // 获取当前规则的目标列表（直接从配置中查找）
+            let rule_targets = if let Some(rule) = config.rules.iter().find(|r| r.name == *rule_name) {
                 &rule.targets
             } else {
                 continue;
@@ -507,17 +448,13 @@ impl CommonManager {
                 }
             }
             
-            // 选择最佳目标（基于健康状态、延迟和优先级）
-            let new_selected_target = select_best_target_with_stickiness(&updated_targets, rule_info.selected_target.as_ref(), local_interfaces);
+            // 选择最佳目标（基于健康状态和配置优先级）
+            let new_selected_target = select_best_target_with_stickiness(&updated_targets, rule_info.selected_target.as_ref());
             
             // 检查是否需要更新目标
             let should_update = match (&rule_info.selected_target, &new_selected_target) {
                 (None, Some(_)) => {
                     // 之前没有目标，现在有了
-                    if let Some(target) = new_selected_target.as_ref() {
-                        info!("规则 {}: {} -> {}", 
-                            rule_name, target.original, target.resolved);
-                    }
                     true
                 }
                 (Some(old), Some(new)) => {
@@ -571,223 +508,37 @@ impl CommonManager {
         Ok(addr.to_string())
     }
 
-    pub async fn start_session_cleanup_task(&self) {
-        // 预留：供UDPForwarder或统一转发器调用的会话清理调度（如需集中管理会话，可在此扩展）
-        tokio::spawn(async move {
-            let mut _interval = tokio::time::interval(Duration::from_secs(60));
-            loop {
-                _interval.tick().await;
-                // 当前会话保存在各UDP转发器内部；如未来集中，会在此清理。
-            }
-        });
-    }
 }
 
-// 故障转移选择目标 - 带地址粘性的选择算法
-fn select_best_target_with_stickiness(targets: &[TargetInfo], current_target: Option<&TargetInfo>, local_interfaces: &[Ipv4Addr]) -> Option<TargetInfo> {
-    // 1. 首先过滤出健康的目标
-    let healthy_targets: Vec<_> = targets.iter()
-        .filter(|t| t.healthy)
-        .collect();
+// 简化目标选择算法 - 优先保持当前健康目标，否则按配置顺序选择
+fn select_best_target_with_stickiness(targets: &[TargetInfo], current_target: Option<&TargetInfo>) -> Option<TargetInfo> {
+    // 1. 过滤健康目标
+    let healthy_targets: Vec<_> = targets.iter().filter(|t| t.healthy).collect();
     
     if healthy_targets.is_empty() {
-        // 如果没有健康的目标，使用原有逻辑
-        return select_best_target(targets, local_interfaces);
+        // 没有健康目标，选择配置中第一个
+        return targets.first().cloned();
     }
     
     // 2. 检查当前目标是否仍然健康
     if let Some(current) = current_target {
-        if let Some(current_in_targets) = healthy_targets.iter().find(|t| t.resolved == current.resolved) {
-            // 当前目标仍然健康，检查是否有更高优先级的目标可用
-            
-            // 为目标按配置顺序排序（配置中越靠前优先级越高）
-            let mut sorted_by_priority = healthy_targets.clone();
-            sorted_by_priority.sort_by(|a, b| {
-                // 先按网段优先级排序（内网地址优先）
-                let a_is_local = is_same_subnet(&local_interfaces, a.resolved.ip());
-                let b_is_local = is_same_subnet(&local_interfaces, b.resolved.ip());
-                
-                let subnet_cmp = b_is_local.cmp(&a_is_local);
-                if subnet_cmp != std::cmp::Ordering::Equal {
-                    return subnet_cmp;
-                }
-                
-                // 网段相同时，保持配置顺序（在targets数组中的位置）
-                let a_pos = targets.iter().position(|t| t.resolved == a.resolved).unwrap_or(999);
-                let b_pos = targets.iter().position(|t| t.resolved == b.resolved).unwrap_or(999);
-                a_pos.cmp(&b_pos)
-            });
-            
-            // 检查最高优先级的目标是否就是当前目标
-            if let Some(highest_priority) = sorted_by_priority.first() {
-                if highest_priority.resolved == current.resolved {
-                    // 当前目标就是最高优先级且健康，保持不变
-                    return Some((*current_in_targets).clone());
-                } else {
-                    // 有更高优先级的健康目标，需要切换
-                    return Some((*highest_priority).clone());
-                }
-            }
+        if healthy_targets.iter().any(|t| t.resolved == current.resolved) {
+            // 当前目标仍然健康，保持不变
+            return Some(current.clone());
         }
     }
     
-    // 3. 当前目标不健康或不存在，选择最佳目标
-    select_best_target(targets, local_interfaces)
+    // 3. 选择配置中最靠前的健康目标
+    for target in targets {
+        if target.healthy {
+            return Some(target.clone());
+        }
+    }
+    
+    // 4. 无健康目标，返回第一个
+    targets.first().cloned()
 }
 
-// 故障转移选择目标 - 智能选择算法（避免非同网段内网地址优先）
-fn select_best_target(targets: &[TargetInfo], local_interfaces: &[Ipv4Addr]) -> Option<TargetInfo> {
-    // 1. 首先过滤出健康的目标
-    let healthy_targets: Vec<_> = targets.iter()
-        .filter(|t| t.healthy)
-        .collect();
-    
-    if healthy_targets.is_empty() {
-        // 如果没有健康的目标，使用智能初始选择策略
-        return select_initial_target_when_unhealthy(targets, local_interfaces);
-    }
-    
-    // 2. 如果只有一个健康目标，直接返回
-    if healthy_targets.len() == 1 {
-        return healthy_targets[0].clone().into();
-    }
-    
-    // 3. 多个健康目标时，使用优化的选择策略
-    select_from_healthy_targets(&healthy_targets, local_interfaces)
-}
 
-// 当没有健康目标时的智能初始选择策略
-fn select_initial_target_when_unhealthy(targets: &[TargetInfo], local_interfaces: &[Ipv4Addr]) -> Option<TargetInfo> {
-    if targets.is_empty() {
-        return None;
-    }
-    
-    // 按智能优先级排序，但在相同优先级内严格按配置顺序
-    let mut sorted_targets: Vec<_> = targets.iter().enumerate().collect();
-    sorted_targets.sort_by(|(a_idx, a), (b_idx, b)| {
-        let a_priority = get_target_priority(&a, local_interfaces);
-        let b_priority = get_target_priority(&b, local_interfaces);
-        
-        // 首先按智能优先级排序（数字越小优先级越高）
-        let priority_cmp = a_priority.cmp(&b_priority);
-        if priority_cmp != std::cmp::Ordering::Equal {
-            return priority_cmp;
-        }
-        
-        // 相同智能优先级时，严格按配置顺序（索引越小优先级越高）
-        let config_cmp = a_idx.cmp(b_idx);
-        if config_cmp != std::cmp::Ordering::Equal {
-            return config_cmp;
-        }
-        
-        // 配置顺序相同时，选择失败次数较少的
-        a.fail_count.cmp(&b.fail_count)
-    });
-    
-    // 返回优先级最高且失败次数相对较少的目标
-    if let Some((_, best)) = sorted_targets.first() {
-        if best.fail_count < 10 { // 避免选择失败次数过多的目标
-            return Some((*best).clone());
-        }
-    }
-    
-    // 如果所有目标失败次数都很多，仍然返回优先级最高的
-    Some(sorted_targets[0].1.clone())
-}
 
-// 从健康目标中选择最佳目标
-fn select_from_healthy_targets(healthy_targets: &[&TargetInfo], local_interfaces: &[Ipv4Addr]) -> Option<TargetInfo> {
-    // 需要在原始目标列表中找到配置位置，这里使用一个简化的方法
-    let mut sorted_targets = healthy_targets.to_vec();
-    sorted_targets.sort_by(|a, b| {
-        // 先按网段优先级排序
-        let a_is_local = is_same_subnet(&local_interfaces, a.resolved.ip());
-        let b_is_local = is_same_subnet(&local_interfaces, b.resolved.ip());
-        
-        // 同网段地址优先
-        let subnet_cmp = b_is_local.cmp(&a_is_local);
-        if subnet_cmp != std::cmp::Ordering::Equal {
-            return subnet_cmp;
-        }
-        
-        // 相同网段内，按延迟排序（优先选择延迟低的）
-        if let (Some(a_latency), Some(b_latency)) = (&a.latency, &b.latency) {
-            return a_latency.cmp(b_latency);
-        }
-        
-        // 延迟相同或没有延迟信息时，按原始地址字符串排序（保持相对稳定的顺序）
-        a.original.cmp(&b.original)
-    });
-    
-    Some(sorted_targets[0].clone())
-}
 
-// 获取目标地址的优先级（数字越小优先级越高）
-fn get_target_priority(target: &TargetInfo, local_interfaces: &[Ipv4Addr]) -> u8 {
-    let ip = target.resolved.ip();
-    
-    // 1. 真正的同网段内网地址 - 最高优先级
-    if is_same_subnet(local_interfaces, ip) {
-        return 1;
-    }
-    
-    // 2. 判断是否为内网IP地址
-    let is_private_ip = match ip {
-        IpAddr::V4(ipv4) => {
-            let octets = ipv4.octets();
-            // 10.0.0.0/8
-            (octets[0] == 10) ||
-            // 172.16.0.0/12
-            (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31) ||
-            // 192.168.0.0/16
-            (octets[0] == 192 && octets[1] == 168)
-        }
-        IpAddr::V6(_) => false, // 简化处理，IPv6暂时当作外网地址
-    };
-    
-    if is_private_ip {
-        // 3. 非同网段的内网地址 - 最低优先级（避免初始选择）
-        return 10;
-    } else {
-        // 2. 外网地址（公网IP或通过域名解析得到的地址）- 中等优先级
-        return 5;
-    }
-}
-
-// 判断目标地址是否与本地接口在同一网段（独立函数）
-fn is_same_subnet(local_ips: &[Ipv4Addr], target_ip: IpAddr) -> bool {
-    if let IpAddr::V4(target_ipv4) = target_ip {
-        for &local_ip in local_ips {
-            // 基于实际网卡地址进行精确的网段匹配
-            let local_octets = local_ip.octets();
-            let target_octets = target_ipv4.octets();
-            
-            // 优先检查是否为相同的/24网段（前3个字节相同）
-            if local_octets[0] == target_octets[0] && 
-               local_octets[1] == target_octets[1] && 
-               local_octets[2] == target_octets[2] {
-                return true;
-            }
-            
-            // 对于常见的大型内网段，使用标准的子网掩码（但只有在同一个子网内才认为是内网）
-            
-            // 10.x.x.x/8 网段 - 但只有前两个字节相同才认为同网段
-            if local_octets[0] == 10 && target_octets[0] == 10 &&
-               local_octets[1] == target_octets[1] {
-                return true;
-            }
-            
-            // 172.16-31.x.x/12 网段 - 但只有前两个字节相同才认为同网段
-            if local_octets[0] == 172 && local_octets[1] >= 16 && local_octets[1] <= 31 &&
-               target_octets[0] == 172 && target_octets[1] >= 16 && target_octets[1] <= 31 &&
-               local_octets[1] == target_octets[1] {
-                return true;
-            }
-        }
-    } else {
-        // 对于IPv6，简单判断是否为回环地址
-        return target_ip.is_loopback();
-    }
-    
-    false
-}

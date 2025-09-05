@@ -1,0 +1,65 @@
+# 智能网络转发器 Docker 镜像
+FROM rust:1.75-slim as builder
+
+# 设置工作目录
+WORKDIR /app
+
+# 安装构建依赖
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 复制 Cargo 文件
+COPY Cargo.toml Cargo.lock ./
+
+# 创建虚拟 main.rs 用于依赖预编译
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+
+# 预编译依赖
+RUN cargo build --release && rm -rf src target/release/deps/smart*
+
+# 复制源代码
+COPY src ./src
+
+# 构建应用
+RUN cargo build --release
+
+# 运行时镜像
+FROM debian:bookworm-slim
+
+# 安装运行时依赖
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# 创建非 root 用户
+RUN useradd -r -s /bin/false smartforward
+
+# 设置工作目录
+WORKDIR /app
+
+# 从构建镜像复制二进制文件
+COPY --from=builder /app/target/release/smart-forward /usr/local/bin/smart-forward
+
+# 复制配置文件
+COPY config.yaml /app/config.yaml
+
+# 创建日志目录
+RUN mkdir -p /app/logs && chown smartforward:smartforward /app/logs
+
+# 切换到非 root 用户
+USER smartforward
+
+# 暴露端口 (根据配置文件中的端口)
+EXPOSE 443 99 6690 999
+
+# 设置环境变量
+ENV RUST_LOG=info
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD /usr/local/bin/smart-forward --validate-config || exit 1
+
+# 启动命令
+CMD ["/usr/local/bin/smart-forward", "--config", "/app/config.yaml"]

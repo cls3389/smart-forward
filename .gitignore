@@ -1,32 +1,12 @@
+target/
+*.log
 smart-forward.out
 smart-forward.err
-# Rust编译产物
-/target/
-Cargo.lock
-
-# 可执行文件
-*.exe
+smart-forward.pid
+deploy/**/smart-forward.exe
+deploy-enhanced/**/smart-forward.exe
 *.pdb
-
-# 运行时文件
-*.pid
-*.log
-
-# IDE文件
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# 系统文件
-.DS_Store
-Thumbs.db
-
-# 临时文件
+*.d
+*.exe
 *.tmp
-*.temp
-*.bak
 
-# 配置文件备份
-config.yaml.bak
-config.yaml.backup
