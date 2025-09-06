@@ -91,7 +91,9 @@ impl TCPForwarder {
                                 stats,
                                 &rule_name,
                             )
-                            .await).is_err() {
+                            .await)
+                                .is_err()
+                            {
                                 // 连接处理失败，但不记录详细错误
                             }
                         });
@@ -544,7 +546,9 @@ impl UDPForwarder {
                                 let stats_clone = stats.clone();
                                 tokio::spawn(async move {
                                     let mut resp_buf = vec![0u8; 4096];
-                                    while let Ok(resp_len) = upstream_reader.recv(&mut resp_buf).await {
+                                    while let Ok(resp_len) =
+                                        upstream_reader.recv(&mut resp_buf).await
+                                    {
                                         if resp_len > 0 {
                                             let _ = socket_clone
                                                 .send_to(&resp_buf[..resp_len], client_addr)

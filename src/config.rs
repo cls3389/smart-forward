@@ -112,13 +112,11 @@ impl Config {
 
     // 获取动态更新配置（优化的内置默认值）
     pub fn get_dynamic_update_config(&self) -> DynamicUpdateConfig {
-        self.dynamic_update
-            .clone()
-            .unwrap_or(DynamicUpdateConfig {
-                check_interval: Some(15),      // 缩短到15秒，与健康检查保持一致
-                connection_timeout: Some(300), // 5分钟连接超时
-                auto_reconnect: Some(true),    // 默认开启自动重连
-            })
+        self.dynamic_update.clone().unwrap_or(DynamicUpdateConfig {
+            check_interval: Some(15),      // 缩短到15秒，与健康检查保持一致
+            connection_timeout: Some(300), // 5分钟连接超时
+            auto_reconnect: Some(true),    // 默认开启自动重连
+        })
     }
 }
 
