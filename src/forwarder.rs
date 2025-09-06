@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use log::{error, info, warn};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::RwLock;
@@ -53,7 +53,15 @@ impl TCPForwarder {
         *self.target_addr.write().await = target.to_string();
         *self.running.write().await = true;
         
-        let listener = TcpListener::bind(&self.listen_addr).await?;
+        let listener = match TcpListener::bind(&self.listen_addr).await {
+            Ok(listener) => {
+                log::info!("TCP监听器 {} 绑定成功: {}", self.name, self.listen_addr);
+                listener
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!("TCP监听器 {} 绑定失败 {}: {}", self.name, self.listen_addr, e));
+            }
+        };
         let target_addr = self.target_addr.clone();
         let stats = self.stats.clone();
         let running = self.running.clone();
@@ -259,7 +267,15 @@ impl Forwarder for HTTPForwarder {
     async fn start(&mut self) -> Result<()> {
         *self.running.write().await = true;
         
-        let listener = TcpListener::bind(&self.listen_addr).await?;
+        let listener = match TcpListener::bind(&self.listen_addr).await {
+            Ok(listener) => {
+                log::info!("HTTP监听器绑定成功: {}", self.listen_addr);
+                listener
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!("HTTP监听器绑定失败 {}: {}", self.listen_addr, e));
+            }
+        };
         let running = self.running.clone();
         
         tokio::spawn(async move {
@@ -304,24 +320,45 @@ impl Forwarder for HTTPForwarder {
 }
 
 // ================================
-// UDP 转发器
+// UDP 转发器 - 基于原版优化实现
 // ================================
 pub struct UDPForwarder {
     listen_addr: String,
+    name: String,
     buffer_size: usize,
     target_addr: Arc<RwLock<String>>,
     stats: Arc<RwLock<ConnectionStats>>,
     running: Arc<RwLock<bool>>,
+    sessions: Arc<RwLock<HashMap<std::net::SocketAddr, UdpSession>>>,
+}
+
+// UDP会话结构
+struct UdpSession {
+    upstream: Option<Arc<UdpSocket>>,
+    target: std::net::SocketAddr,
+    last_seen: std::time::Instant,
+}
+
+impl UdpSession {
+    fn new() -> Self {
+        Self {
+            upstream: None,
+            target: "0.0.0.0:0".parse().unwrap(),
+            last_seen: std::time::Instant::now(),
+        }
+    }
 }
 
 impl UDPForwarder {
-    pub fn new(listen_addr: &str, _name: &str, buffer_size: usize) -> Self {
+    pub fn new(listen_addr: &str, name: &str, buffer_size: usize) -> Self {
         Self {
             listen_addr: listen_addr.to_string(),
+            name: name.to_string(),
             buffer_size,
             target_addr: Arc::new(RwLock::new(String::new())),
             stats: Arc::new(RwLock::new(ConnectionStats::default())),
             running: Arc::new(RwLock::new(false)),
+            sessions: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -329,42 +366,152 @@ impl UDPForwarder {
         *self.target_addr.write().await = target.to_string();
         *self.running.write().await = true;
         
-        let socket = UdpSocket::bind(&self.listen_addr).await?;
-        let target_addr = self.target_addr.clone();
+        let socket = match UdpSocket::bind(&self.listen_addr).await {
+            Ok(socket) => {
+                log::info!("UDP监听器绑定成功: {}", self.listen_addr);
+                socket
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!("UDP监听器绑定失败 {}: {}", self.listen_addr, e));
+            }
+        };
+        
+        // 启动主转发循环
         let stats = self.stats.clone();
         let running = self.running.clone();
+        let target_addr = self.target_addr.clone();
+        let sessions = self.sessions.clone();
         let buffer_size = self.buffer_size;
+        let name = self.name.clone();
         
         tokio::spawn(async move {
-            let mut buffer = vec![0u8; buffer_size];
-            
-            while *running.read().await {
-                match socket.recv_from(&mut buffer).await {
-                    Ok((size, _client_addr)) => {
-                        let target_str = target_addr.read().await.clone();
-                        let stats = stats.clone();
-                        
-                        // 简化的UDP转发：直接转发，不维护会话
-                        if let Ok(target) = crate::utils::resolve_target(&target_str).await {
-                            if let Ok(upstream_socket) = UdpSocket::bind("0.0.0.0:0").await {
-                                let _ = upstream_socket.send_to(&buffer[..size], target).await;
-                                stats.write().await.add_bytes_sent(size as u64);
-                                stats.write().await.increment_connections();
-                            }
+            Self::udp_forward_loop(socket, buffer_size, name, stats, running, target_addr, sessions).await;
+        });
+        
+        // 启动会话清理任务
+        let sessions_cleanup = self.sessions.clone();
+        let running_cleanup = self.running.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(30));
+            loop {
+                if !*running_cleanup.read().await { break; }
+                interval.tick().await;
+                
+                let now = std::time::Instant::now();
+                let mut to_remove = Vec::new();
+                {
+                    let sessions_read = sessions_cleanup.read().await;
+                    for (client, sess) in sessions_read.iter() {
+                        if now.duration_since(sess.last_seen).as_secs() > 60 {
+                            to_remove.push(*client);
                         }
                     }
-                    Err(e) => {
-                        // UDP接收错误，记录日志但继续运行
-                        log::warn!("UDP监听器接收数据失败: {}", e);
-                        // 短暂延迟后继续，避免快速重试
-                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                        continue;
+                }
+                if !to_remove.is_empty() {
+                    let mut sessions_write = sessions_cleanup.write().await;
+                    for client in to_remove {
+                        sessions_write.remove(&client);
                     }
                 }
             }
         });
         
         Ok(())
+    }
+    
+    async fn udp_forward_loop(
+        socket: UdpSocket,
+        buffer_size: usize,
+        name: String,
+        stats: Arc<RwLock<ConnectionStats>>,
+        running: Arc<RwLock<bool>>,
+        target_addr: Arc<RwLock<String>>,
+        sessions: Arc<RwLock<HashMap<std::net::SocketAddr, UdpSession>>>,
+    ) {
+        let mut buffer = vec![0u8; buffer_size];
+        let socket = Arc::new(socket);
+        let mut target_cache: HashMap<String, (std::net::SocketAddr, std::time::Instant)> = HashMap::new();
+        
+        loop {
+            if !*running.read().await { break; }
+            
+            match socket.recv_from(&mut buffer).await {
+                Ok((len, client_addr)) => {
+                    stats.write().await.add_bytes_received(len as u64);
+                    
+                    let target_addr_str = target_addr.read().await.clone();
+                    
+                    // DNS缓存：5分钟有效期
+                    let target = if let Some((cached_target, timestamp)) = target_cache.get(&target_addr_str) {
+                        if timestamp.elapsed().as_secs() < 300 {
+                            *cached_target
+                        } else {
+                            target_cache.remove(&target_addr_str);
+                            match crate::utils::resolve_target(&target_addr_str).await {
+                                Ok(addr) => {
+                                    target_cache.insert(target_addr_str.clone(), (addr, std::time::Instant::now()));
+                                    addr
+                                },
+                                Err(_) => continue,
+                            }
+                        }
+                    } else {
+                        match crate::utils::resolve_target(&target_addr_str).await {
+                            Ok(addr) => {
+                                target_cache.insert(target_addr_str.clone(), (addr, std::time::Instant::now()));
+                                addr
+                            },
+                            Err(_) => continue,
+                        }
+                    };
+                    
+                    // 获取或创建会话
+                    let mut sessions_guard = sessions.write().await;
+                    let entry = sessions_guard.entry(client_addr).or_insert_with(|| UdpSession::new());
+                    
+                    // 如果没有上游socket或目标变化，重新连接
+                    if entry.upstream.is_none() || entry.target != target {
+                        if let Ok(upstream) = UdpSocket::bind("0.0.0.0:0").await {
+                            if upstream.connect(target).await.is_ok() {
+                                let upstream = Arc::new(upstream);
+                                
+                                // 启动回程任务
+                                let upstream_reader = upstream.clone();
+                                let socket_clone = socket.clone();
+                                let stats_clone = stats.clone();
+                                tokio::spawn(async move {
+                                    let mut resp_buf = vec![0u8; 4096];
+                                    loop {
+                                        match upstream_reader.recv(&mut resp_buf).await {
+                                            Ok(resp_len) => {
+                                                if resp_len > 0 {
+                                                    let _ = socket_clone.send_to(&resp_buf[..resp_len], client_addr).await;
+                                                    stats_clone.write().await.add_bytes_sent(resp_len as u64);
+                                                }
+                                            }
+                                            Err(_) => break,
+                                        }
+                                    }
+                                });
+                                
+                                entry.upstream = Some(upstream);
+                                entry.target = target;
+                            }
+                        }
+                    }
+                    entry.last_seen = std::time::Instant::now();
+                    
+                    // 转发数据
+                    if let Some(ref upstream) = entry.upstream {
+                        let _ = upstream.send(&buffer[..len]).await;
+                        stats.write().await.add_bytes_sent(len as u64);
+                    }
+                }
+                Err(_) => {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            }
+        }
     }
 
     pub async fn update_target(&mut self, new_target: &str) -> Result<()> {
@@ -595,14 +742,32 @@ impl SmartForwarder {
 
     pub async fn start(&mut self) -> Result<()> {
         let rules = self.config.rules.clone();
+        let mut success_count = 0;
+        let total_count = rules.len();
+        
         for rule in &rules {
-            self.start_forwarder(rule).await?;
+            match self.start_forwarder(rule).await {
+                Ok(_) => {
+                    success_count += 1;
+                }
+                Err(e) => {
+                    error!("规则 {} 启动失败: {}", rule.name, e);
+                    // 继续处理其他规则，不退出
+                }
+            }
         }
+        
+        info!("启动完成: {} 个规则可用 (总共 {} 个规则)", success_count, total_count);
         
         // 启动动态更新任务
         if !*self.dynamic_update_started.read().await {
             self.start_dynamic_update_task().await;
             *self.dynamic_update_started.write().await = true;
+        }
+        
+        // 如果没有任何规则启动成功，返回错误
+        if success_count == 0 {
+            return Err(anyhow::anyhow!("没有规则成功启动，请检查配置和端口占用情况"));
         }
         
         Ok(())
@@ -619,12 +784,18 @@ impl SmartForwarder {
             
             // 创建统一转发器
             let mut unified_forwarder = UnifiedForwarder::new_with_target(rule, &listen_addr, &target_addr);
-            unified_forwarder.start().await?;
-            
-            self.forwarders.write().await.insert(
-                rule.name.clone(),
-                Box::new(unified_forwarder),
-            );
+            match unified_forwarder.start().await {
+                Ok(_) => {
+                    self.forwarders.write().await.insert(
+                        rule.name.clone(),
+                        Box::new(unified_forwarder),
+                    );
+                }
+                Err(e) => {
+                    error!("规则 {} 启动失败: {}", rule.name, e);
+                    // 不返回错误，继续处理其他规则
+                }
+            }
         } else {
             warn!("规则 {} 没有可用的目标地址", rule.name);
         }

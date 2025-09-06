@@ -1,12 +1,35 @@
-target/
-*.log
-smart-forward.out
-smart-forward.err
-smart-forward.pid
-deploy/**/smart-forward.exe
-deploy-enhanced/**/smart-forward.exe
+# Rust
+/target/
+**/*.rs.bk
 *.pdb
-*.d
-*.exe
-*.tmp
 
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Config (keep example)
+config.yaml
+!config.yaml.example
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Docker
+.dockerignore
+
+# Temporary files
+*.tmp
+*.temp
