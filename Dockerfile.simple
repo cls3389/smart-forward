@@ -18,8 +18,16 @@ ENV RUST_BACKTRACE=1
 # 复制所有文件
 COPY . .
 
+# 显示文件结构用于调试
+RUN ls -la
+RUN ls -la src/
+
+# 检查Cargo.toml和Cargo.lock
+RUN cat Cargo.toml
+RUN head -20 Cargo.lock
+
 # 构建应用
-RUN cargo build --release
+RUN cargo build --release --verbose
 
 # 运行时镜像
 FROM debian:bookworm-slim

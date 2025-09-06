@@ -1,0 +1,28 @@
+# 测试Dockerfile - 最小化版本
+FROM rust:1.75-slim
+
+# 设置工作目录
+WORKDIR /app
+
+# 安装基本依赖
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# 设置环境变量
+ENV CARGO_TERM_COLOR=always
+ENV RUST_BACKTRACE=1
+
+# 复制Cargo文件
+COPY Cargo.toml Cargo.lock ./
+
+# 创建简单的main.rs
+RUN echo 'fn main() { println!("Hello, world!"); }' > src/main.rs
+
+# 测试构建
+RUN cargo build --release --verbose
+
+# 运行测试
+RUN ./target/release/smart-forward
