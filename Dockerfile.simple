@@ -1,5 +1,5 @@
 # 智能网络转发器 Docker 镜像 - 简化版本
-FROM rust:1.75-slim as builder
+FROM rust:1.70-slim as builder
 
 # 设置工作目录
 WORKDIR /app
@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     ca-certificates \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # 设置环境变量
