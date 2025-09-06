@@ -82,10 +82,20 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     if: github.event_name == 'push'
+    permissions:
+      contents: read
+      security-events: write
 
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
+
+      - name: 登录到 GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 运行 Trivy 漏洞扫描
         id: trivy
@@ -94,13 +104,25 @@ jobs:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           format: 'sarif'
           output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
         continue-on-error: true
 
+      - name: 检查 Trivy 扫描结果
+        run: |
+          if [ -f "trivy-results.sarif" ]; then
+            echo "✅ Trivy 扫描结果文件存在"
+            echo "文件大小: $(wc -c < trivy-results.sarif) bytes"
+            head -20 trivy-results.sarif
+          else
+            echo "⚠️ Trivy 扫描结果文件不存在"
+          fi
+
       - name: 上传 Trivy 扫描结果
-        if: success() && steps.trivy.outcome == 'success'
+        if: always() && steps.trivy.outcome == 'success'
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
+        continue-on-error: true
 
   # 镜像测试
   test:
