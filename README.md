@@ -33,7 +33,7 @@
 
 ```bash
 # 拉取镜像
-docker pull ghcr.io/your-username/smart-forward:latest
+docker pull ghcr.io/cls3389/smart-forward:latest
 
 # 运行容器
 docker run -d \
@@ -43,7 +43,7 @@ docker run -d \
   -p 6690:6690 \
   -p 999:999 \
   -v $(pwd)/config.yaml:/app/config.yaml:ro \
-  ghcr.io/your-username/smart-forward:latest
+  ghcr.io/cls3389/smart-forward:latest
 ```
 
 ### 从源码构建
