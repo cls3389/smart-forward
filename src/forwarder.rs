@@ -84,15 +84,14 @@ impl TCPForwarder {
                         let rule_name = name.clone();
 
                         tokio::spawn(async move {
-                            if let Err(_) = Self::handle_connection(
+                            if (Self::handle_connection(
                                 stream,
                                 &target_str,
                                 buffer_size,
                                 stats,
                                 &rule_name,
                             )
-                            .await
-                            {
+                            .await).is_err() {
                                 // 连接处理失败，但不记录详细错误
                             }
                         });
@@ -169,10 +168,10 @@ impl TCPForwarder {
         );
 
         // 简化错误处理，连接断开是正常现象，减少日志噪音
-        if let Err(_) = client_to_target {
+        if client_to_target.is_err() {
             // 连接断开不记录错误日志
         }
-        if let Err(_) = target_to_client {
+        if target_to_client.is_err() {
             // 连接断开不记录错误日志
         }
 
@@ -531,7 +530,7 @@ impl UDPForwarder {
                     let mut sessions_guard = sessions.write().await;
                     let entry = sessions_guard
                         .entry(client_addr)
-                        .or_insert_with(|| UdpSession::new());
+                        .or_insert_with(UdpSession::new);
 
                     // 如果没有上游socket或目标变化，重新连接
                     if entry.upstream.is_none() || entry.target != target {
@@ -545,20 +544,15 @@ impl UDPForwarder {
                                 let stats_clone = stats.clone();
                                 tokio::spawn(async move {
                                     let mut resp_buf = vec![0u8; 4096];
-                                    loop {
-                                        match upstream_reader.recv(&mut resp_buf).await {
-                                            Ok(resp_len) => {
-                                                if resp_len > 0 {
-                                                    let _ = socket_clone
-                                                        .send_to(&resp_buf[..resp_len], client_addr)
-                                                        .await;
-                                                    stats_clone
-                                                        .write()
-                                                        .await
-                                                        .add_bytes_sent(resp_len as u64);
-                                                }
-                                            }
-                                            Err(_) => break,
+                                    while let Ok(resp_len) = upstream_reader.recv(&mut resp_buf).await {
+                                        if resp_len > 0 {
+                                            let _ = socket_clone
+                                                .send_to(&resp_buf[..resp_len], client_addr)
+                                                .await;
+                                            stats_clone
+                                                .write()
+                                                .await
+                                                .add_bytes_sent(resp_len as u64);
                                         }
                                     }
                                 });

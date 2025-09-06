@@ -86,7 +86,7 @@ impl CommonManager {
     async fn initialize_rule_targets(&self, rule: &crate::config::ForwardRule) -> Result<()> {
         let mut targets = Vec::new();
 
-        for (_priority, target_str) in rule.targets.iter().enumerate() {
+        for target_str in rule.targets.iter() {
             match resolve_target(target_str).await {
                 Ok(resolved_addr) => {
                     let target_info = TargetInfo {
@@ -168,7 +168,7 @@ impl CommonManager {
         let mut dns_tasks = Vec::new();
         for (target_str, target_info) in targets {
             // 只对域名进行DNS解析，跳过IP地址
-            if !target_str.parse::<std::net::IpAddr>().is_ok() && target_str.contains('.') {
+            if target_str.parse::<std::net::IpAddr>().is_err() && target_str.contains('.') {
                 let task = tokio::spawn(async move {
                     match resolve_target(&target_str).await {
                         Ok(new_resolved) => {
@@ -299,11 +299,9 @@ impl CommonManager {
                         target_info.last_check = Instant::now();
 
                         // 失败1次就标记为不健康，快速切换
-                        if target_info.fail_count >= 1 {
-                            if old_healthy {
-                                target_info.healthy = false;
-                                status_changes.push(format!("{} 异常", target_str));
-                            }
+                        if target_info.fail_count >= 1 && old_healthy {
+                            target_info.healthy = false;
+                            status_changes.push(format!("{} 异常", target_str));
                         }
 
                         // 统计时仍然按当前健康状态计算
@@ -423,11 +421,9 @@ impl CommonManager {
                         target_info.last_check = Instant::now();
 
                         // 失败1次就标记为不健康，快速切换
-                        if target_info.fail_count >= 1 {
-                            if old_healthy {
-                                target_info.healthy = false;
-                                status_changes.push(format!("{} 异常", target_str));
-                            }
+                        if target_info.fail_count >= 1 && old_healthy {
+                            target_info.healthy = false;
+                            status_changes.push(format!("{} 异常", target_str));
                         }
 
                         // 统计时仍然按当前健康状态计算
