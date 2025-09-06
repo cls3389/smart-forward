@@ -1,18 +1,9 @@
-name: 发布 v1.0.0 正式版本
+name: 标签发布
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: '发布版本号'
-        required: true
-        default: 'v1.0.0'
-        type: string
-      publish_cargo:
-        description: '发布到 Cargo'
-        required: false
-        default: false
-        type: boolean
+  push:
+    tags:
+      - 'v*'
 
 env:
   CARGO_TERM_COLOR: always
@@ -160,7 +151,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:1.0.0
+            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
             ghcr.io/${{ github.repository }}:latest
             ghcr.io/${{ github.repository }}:${{ github.sha }}
 
@@ -169,7 +160,6 @@ jobs:
     name: 创建 GitHub Release
     runs-on: ubuntu-latest
     needs: [build, docker]
-    if: github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
       packages: write
@@ -189,11 +179,12 @@ jobs:
           find artifacts -name "*.zip" -o -name "*.tar.gz" | while read file; do
             cp "$file" release-files/
           done
+          ls -la release-files/
 
       - name: 生成发布说明
         id: release_notes
         run: |
-          VERSION="${{ github.event.inputs.version }}"
+          VERSION="${GITHUB_REF#refs/tags/}"
           
           cat > release-notes.md << EOF
           # Smart Forward $VERSION
@@ -223,7 +214,7 @@ jobs:
           ## 🐳 Docker
           \`\`\`bash
           # 拉取最新镜像
-          docker pull ghcr.io/${{ github.repository }}:1.0.0
+          docker pull ghcr.io/${{ github.repository }}:$VERSION
           
           # 运行容器
           docker run -d \\
@@ -233,7 +224,7 @@ jobs:
             -p 6690:6690 \\
             -p 999:999 \\
             -v \$(pwd)/config.yaml:/app/config.yaml:ro \\
-            ghcr.io/${{ github.repository }}:1.0.0
+            ghcr.io/${{ github.repository }}:$VERSION
           \`\`\`
           
           ## 📋 使用说明
@@ -282,20 +273,3 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # 发布到 Cargo (可选)
-  publish-cargo:
-    name: 发布到 Cargo
-    runs-on: ubuntu-latest
-    needs: release
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish_cargo == 'true'
-
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
-      - name: 安装 Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: 发布到 Cargo
-        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
