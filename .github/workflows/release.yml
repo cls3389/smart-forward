@@ -107,7 +107,7 @@ jobs:
           fi
 
       - name: 上传构建产物
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: smart-forward-${{ matrix.platform }}-${{ matrix.arch }}
           path: release/smart-forward-${{ matrix.platform }}-${{ matrix.arch }}.*
