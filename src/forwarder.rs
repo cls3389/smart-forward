@@ -1,7 +1,7 @@
 // 智能网络转发器 - 完整转发器实现
-use crate::config::{Config, ForwardRule};
 use crate::common::CommonManager;
-use crate::utils::{ConnectionStats, get_standard_stats, get_stats_with_target};
+use crate::config::{Config, ForwardRule};
+use crate::utils::{get_standard_stats, get_stats_with_target, ConnectionStats};
 use anyhow::Result;
 use async_trait::async_trait;
 use log::{error, info, warn};
@@ -20,7 +20,9 @@ pub trait Forwarder: Send + Sync {
     async fn start(&mut self) -> Result<()>;
     async fn stop(&mut self);
     fn is_running(&self) -> bool;
+    #[allow(dead_code)]
     fn get_stats(&self) -> HashMap<String, String>;
+    #[allow(dead_code)]
     fn as_any(&self) -> &dyn std::any::Any;
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
@@ -52,14 +54,19 @@ impl TCPForwarder {
     pub async fn start_with_target(&mut self, target: &str) -> Result<()> {
         *self.target_addr.write().await = target.to_string();
         *self.running.write().await = true;
-        
+
         let listener = match TcpListener::bind(&self.listen_addr).await {
             Ok(listener) => {
                 log::info!("TCP监听器 {} 绑定成功: {}", self.name, self.listen_addr);
                 listener
             }
             Err(e) => {
-                return Err(anyhow::anyhow!("TCP监听器 {} 绑定失败 {}: {}", self.name, self.listen_addr, e));
+                return Err(anyhow::anyhow!(
+                    "TCP监听器 {} 绑定失败 {}: {}",
+                    self.name,
+                    self.listen_addr,
+                    e
+                ));
             }
         };
         let target_addr = self.target_addr.clone();
@@ -67,7 +74,7 @@ impl TCPForwarder {
         let running = self.running.clone();
         let name = self.name.clone();
         let buffer_size = self.buffer_size;
-        
+
         tokio::spawn(async move {
             while *running.read().await {
                 match listener.accept().await {
@@ -75,9 +82,17 @@ impl TCPForwarder {
                         let target_str = target_addr.read().await.clone();
                         let stats = stats.clone();
                         let rule_name = name.clone();
-                        
+
                         tokio::spawn(async move {
-                            if let Err(_) = Self::handle_connection(stream, &target_str, buffer_size, stats, &rule_name).await {
+                            if let Err(_) = Self::handle_connection(
+                                stream,
+                                &target_str,
+                                buffer_size,
+                                stats,
+                                &rule_name,
+                            )
+                            .await
+                            {
                                 // 连接处理失败，但不记录详细错误
                             }
                         });
@@ -92,7 +107,7 @@ impl TCPForwarder {
                 }
             }
         });
-        
+
         Ok(())
     }
 
@@ -109,17 +124,19 @@ impl TCPForwarder {
         _rule_name: &str,
     ) -> Result<()> {
         let target: std::net::SocketAddr = crate::utils::resolve_target(target_addr).await?;
-        
+
         stats.write().await.increment_connections();
-        
+
         // 优化TCP：降低延迟
         let _ = client_stream.set_nodelay(true);
 
         // 直接连接，不重试（让健康检查快速切换到正确地址）
         let mut target_stream = match tokio::time::timeout(
             tokio::time::Duration::from_secs(5),
-            tokio::net::TcpStream::connect(target)
-        ).await {
+            tokio::net::TcpStream::connect(target),
+        )
+        .await
+        {
             Ok(Ok(stream)) => stream,
             Ok(Err(e)) => return Err(anyhow::anyhow!("连接目标失败: {}", e)),
             Err(_) => return Err(anyhow::anyhow!("连接目标超时")),
@@ -127,18 +144,30 @@ impl TCPForwarder {
 
         // 目标侧同样禁用Nagle算法
         let _ = target_stream.set_nodelay(true);
-        
+
         let (mut client_read, mut client_write) = client_stream.split();
         let (mut target_read, mut target_write) = target_stream.split();
-        
+
         let mut client_buffer = vec![0u8; buffer_size];
         let mut target_buffer = vec![0u8; buffer_size];
-        
+
         let (client_to_target, target_to_client) = tokio::join!(
-            Self::forward_data(&mut client_read, &mut target_write, &mut client_buffer, &stats, true),
-            Self::forward_data(&mut target_read, &mut client_write, &mut target_buffer, &stats, false),
+            Self::forward_data(
+                &mut client_read,
+                &mut target_write,
+                &mut client_buffer,
+                &stats,
+                true
+            ),
+            Self::forward_data(
+                &mut target_read,
+                &mut client_write,
+                &mut target_buffer,
+                &stats,
+                false
+            ),
         );
-        
+
         // 简化错误处理，连接断开是正常现象，减少日志噪音
         if let Err(_) = client_to_target {
             // 连接断开不记录错误日志
@@ -146,10 +175,10 @@ impl TCPForwarder {
         if let Err(_) = target_to_client {
             // 连接断开不记录错误日志
         }
-        
+
         Ok(())
     }
-    
+
     async fn forward_data<R, W>(
         reader: &mut R,
         writer: &mut W,
@@ -167,11 +196,11 @@ impl TCPForwarder {
             if n == 0 {
                 break;
             }
-            
+
             writer.write_all(&buffer[..n]).await?;
             total_bytes += n as u64;
         }
-        
+
         // 批量更新统计信息，减少锁竞争
         if total_bytes > 0 {
             if is_sent {
@@ -180,10 +209,10 @@ impl TCPForwarder {
                 stats.write().await.add_bytes_received(total_bytes);
             }
         }
-        
+
         Ok(())
     }
-    
+
     pub fn get_stats(&self) -> HashMap<String, String> {
         let stats = self.stats.blocking_read();
         get_standard_stats(&stats)
@@ -195,23 +224,23 @@ impl Forwarder for TCPForwarder {
     async fn start(&mut self) -> Result<()> {
         Err(anyhow::anyhow!("TCP转发器需要使用start_with_target方法"))
     }
-    
+
     async fn stop(&mut self) {
         *self.running.write().await = false;
     }
-    
+
     fn is_running(&self) -> bool {
         *self.running.blocking_read()
     }
-    
+
     fn get_stats(&self) -> HashMap<String, String> {
         Self::get_stats(self)
     }
-    
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    
+
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
@@ -238,13 +267,16 @@ impl HTTPForwarder {
     async fn handle_http_redirect(mut stream: TcpStream) -> Result<()> {
         let mut buffer = [0; 1024];
         let n = stream.read(&mut buffer).await?;
-        
+
         if n > 0 {
             let request = String::from_utf8_lossy(&buffer[..n]);
-            if let Some(host_line) = request.lines().find(|line| line.to_lowercase().starts_with("host:")) {
+            if let Some(host_line) = request
+                .lines()
+                .find(|line| line.to_lowercase().starts_with("host:"))
+            {
                 let host = host_line.split(':').nth(1).unwrap_or("").trim();
                 let https_url = format!("https://{}", host);
-                
+
                 let response = format!(
                     "HTTP/1.1 301 Moved Permanently\r\n\
                      Location: {}\r\n\
@@ -253,11 +285,11 @@ impl HTTPForwarder {
                      \r\n",
                     https_url
                 );
-                
+
                 stream.write_all(response.as_bytes()).await?;
             }
         }
-        
+
         Ok(())
     }
 }
@@ -266,18 +298,22 @@ impl HTTPForwarder {
 impl Forwarder for HTTPForwarder {
     async fn start(&mut self) -> Result<()> {
         *self.running.write().await = true;
-        
+
         let listener = match TcpListener::bind(&self.listen_addr).await {
             Ok(listener) => {
                 log::info!("HTTP监听器绑定成功: {}", self.listen_addr);
                 listener
             }
             Err(e) => {
-                return Err(anyhow::anyhow!("HTTP监听器绑定失败 {}: {}", self.listen_addr, e));
+                return Err(anyhow::anyhow!(
+                    "HTTP监听器绑定失败 {}: {}",
+                    self.listen_addr,
+                    e
+                ));
             }
         };
         let running = self.running.clone();
-        
+
         tokio::spawn(async move {
             while *running.read().await {
                 match listener.accept().await {
@@ -290,18 +326,18 @@ impl Forwarder for HTTPForwarder {
                 }
             }
         });
-        
+
         Ok(())
     }
-    
+
     async fn stop(&mut self) {
         *self.running.write().await = false;
     }
-    
+
     fn is_running(&self) -> bool {
         *self.running.blocking_read()
     }
-    
+
     fn get_stats(&self) -> HashMap<String, String> {
         let mut stats = HashMap::new();
         stats.insert("name".to_string(), self.name.clone());
@@ -309,11 +345,11 @@ impl Forwarder for HTTPForwarder {
         stats.insert("running".to_string(), self.is_running().to_string());
         stats
     }
-    
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    
+
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
@@ -365,17 +401,21 @@ impl UDPForwarder {
     pub async fn start_with_target(&mut self, target: &str) -> Result<()> {
         *self.target_addr.write().await = target.to_string();
         *self.running.write().await = true;
-        
+
         let socket = match UdpSocket::bind(&self.listen_addr).await {
             Ok(socket) => {
                 log::info!("UDP监听器绑定成功: {}", self.listen_addr);
                 socket
             }
             Err(e) => {
-                return Err(anyhow::anyhow!("UDP监听器绑定失败 {}: {}", self.listen_addr, e));
+                return Err(anyhow::anyhow!(
+                    "UDP监听器绑定失败 {}: {}",
+                    self.listen_addr,
+                    e
+                ));
             }
         };
-        
+
         // 启动主转发循环
         let stats = self.stats.clone();
         let running = self.running.clone();
@@ -383,20 +423,31 @@ impl UDPForwarder {
         let sessions = self.sessions.clone();
         let buffer_size = self.buffer_size;
         let name = self.name.clone();
-        
+
         tokio::spawn(async move {
-            Self::udp_forward_loop(socket, buffer_size, name, stats, running, target_addr, sessions).await;
+            Self::udp_forward_loop(
+                socket,
+                buffer_size,
+                name,
+                stats,
+                running,
+                target_addr,
+                sessions,
+            )
+            .await;
         });
-        
+
         // 启动会话清理任务
         let sessions_cleanup = self.sessions.clone();
         let running_cleanup = self.running.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(30));
             loop {
-                if !*running_cleanup.read().await { break; }
+                if !*running_cleanup.read().await {
+                    break;
+                }
                 interval.tick().await;
-                
+
                 let now = std::time::Instant::now();
                 let mut to_remove = Vec::new();
                 {
@@ -415,14 +466,14 @@ impl UDPForwarder {
                 }
             }
         });
-        
+
         Ok(())
     }
-    
+
     async fn udp_forward_loop(
         socket: UdpSocket,
         buffer_size: usize,
-        name: String,
+        _name: String,
         stats: Arc<RwLock<ConnectionStats>>,
         running: Arc<RwLock<bool>>,
         target_addr: Arc<RwLock<String>>,
@@ -430,51 +481,64 @@ impl UDPForwarder {
     ) {
         let mut buffer = vec![0u8; buffer_size];
         let socket = Arc::new(socket);
-        let mut target_cache: HashMap<String, (std::net::SocketAddr, std::time::Instant)> = HashMap::new();
-        
+        let mut target_cache: HashMap<String, (std::net::SocketAddr, std::time::Instant)> =
+            HashMap::new();
+
         loop {
-            if !*running.read().await { break; }
-            
+            if !*running.read().await {
+                break;
+            }
+
             match socket.recv_from(&mut buffer).await {
                 Ok((len, client_addr)) => {
                     stats.write().await.add_bytes_received(len as u64);
-                    
+
                     let target_addr_str = target_addr.read().await.clone();
-                    
+
                     // DNS缓存：5分钟有效期
-                    let target = if let Some((cached_target, timestamp)) = target_cache.get(&target_addr_str) {
+                    let target = if let Some((cached_target, timestamp)) =
+                        target_cache.get(&target_addr_str)
+                    {
                         if timestamp.elapsed().as_secs() < 300 {
                             *cached_target
                         } else {
                             target_cache.remove(&target_addr_str);
                             match crate::utils::resolve_target(&target_addr_str).await {
                                 Ok(addr) => {
-                                    target_cache.insert(target_addr_str.clone(), (addr, std::time::Instant::now()));
+                                    target_cache.insert(
+                                        target_addr_str.clone(),
+                                        (addr, std::time::Instant::now()),
+                                    );
                                     addr
-                                },
+                                }
                                 Err(_) => continue,
                             }
                         }
                     } else {
                         match crate::utils::resolve_target(&target_addr_str).await {
                             Ok(addr) => {
-                                target_cache.insert(target_addr_str.clone(), (addr, std::time::Instant::now()));
+                                target_cache.insert(
+                                    target_addr_str.clone(),
+                                    (addr, std::time::Instant::now()),
+                                );
                                 addr
-                            },
+                            }
                             Err(_) => continue,
                         }
                     };
-                    
+
                     // 获取或创建会话
                     let mut sessions_guard = sessions.write().await;
-                    let entry = sessions_guard.entry(client_addr).or_insert_with(|| UdpSession::new());
-                    
+                    let entry = sessions_guard
+                        .entry(client_addr)
+                        .or_insert_with(|| UdpSession::new());
+
                     // 如果没有上游socket或目标变化，重新连接
                     if entry.upstream.is_none() || entry.target != target {
                         if let Ok(upstream) = UdpSocket::bind("0.0.0.0:0").await {
                             if upstream.connect(target).await.is_ok() {
                                 let upstream = Arc::new(upstream);
-                                
+
                                 // 启动回程任务
                                 let upstream_reader = upstream.clone();
                                 let socket_clone = socket.clone();
@@ -485,22 +549,27 @@ impl UDPForwarder {
                                         match upstream_reader.recv(&mut resp_buf).await {
                                             Ok(resp_len) => {
                                                 if resp_len > 0 {
-                                                    let _ = socket_clone.send_to(&resp_buf[..resp_len], client_addr).await;
-                                                    stats_clone.write().await.add_bytes_sent(resp_len as u64);
+                                                    let _ = socket_clone
+                                                        .send_to(&resp_buf[..resp_len], client_addr)
+                                                        .await;
+                                                    stats_clone
+                                                        .write()
+                                                        .await
+                                                        .add_bytes_sent(resp_len as u64);
                                                 }
                                             }
                                             Err(_) => break,
                                         }
                                     }
                                 });
-                                
+
                                 entry.upstream = Some(upstream);
                                 entry.target = target;
                             }
                         }
                     }
                     entry.last_seen = std::time::Instant::now();
-                    
+
                     // 转发数据
                     if let Some(ref upstream) = entry.upstream {
                         let _ = upstream.send(&buffer[..len]).await;
@@ -518,7 +587,7 @@ impl UDPForwarder {
         *self.target_addr.write().await = new_target.to_string();
         Ok(())
     }
-    
+
     pub fn get_stats(&self) -> HashMap<String, String> {
         let stats = self.stats.blocking_read();
         get_stats_with_target(&stats, &self.target_addr.blocking_read())
@@ -530,23 +599,23 @@ impl Forwarder for UDPForwarder {
     async fn start(&mut self) -> Result<()> {
         Err(anyhow::anyhow!("UDP转发器需要使用start_with_target方法"))
     }
-    
+
     async fn stop(&mut self) {
         *self.running.write().await = false;
     }
-    
+
     fn is_running(&self) -> bool {
         *self.running.blocking_read()
     }
-    
+
     fn get_stats(&self) -> HashMap<String, String> {
         Self::get_stats(self)
     }
-    
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    
+
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
@@ -584,7 +653,7 @@ impl UnifiedForwarder {
         if self.target_addr != new_target {
             self.target_addr = new_target.to_string();
             *self.last_update.write().await = Instant::now();
-            
+
             // 更新各转发器的目标地址
             if let Some(ref mut tcp) = self.tcp_forwarder {
                 tcp.update_target(new_target).await?;
@@ -601,7 +670,7 @@ impl UnifiedForwarder {
 impl Forwarder for UnifiedForwarder {
     async fn start(&mut self) -> Result<()> {
         *self.running.write().await = true;
-        
+
         let protocols = if let Some(ref protocols) = self.rule.protocols {
             protocols.clone()
         } else if let Some(ref protocol) = self.rule.protocol {
@@ -609,7 +678,7 @@ impl Forwarder for UnifiedForwarder {
         } else {
             vec!["tcp".to_string()]
         };
-        
+
         for protocol in &protocols {
             match protocol.as_str() {
                 "tcp" => {
@@ -648,13 +717,13 @@ impl Forwarder for UnifiedForwarder {
                 _ => {}
             }
         }
-        
+
         Ok(())
     }
-    
+
     async fn stop(&mut self) {
         *self.running.write().await = false;
-        
+
         if let Some(ref mut tcp) = self.tcp_forwarder {
             tcp.stop().await;
         }
@@ -665,11 +734,11 @@ impl Forwarder for UnifiedForwarder {
             http.stop().await;
         }
     }
-    
+
     fn is_running(&self) -> bool {
         *self.running.blocking_read()
     }
-    
+
     fn get_stats(&self) -> HashMap<String, String> {
         let mut stats = HashMap::new();
         stats.insert("rule_name".to_string(), self.rule.name.clone());
@@ -683,28 +752,28 @@ impl Forwarder for UnifiedForwarder {
         };
         stats.insert("protocols".to_string(), protocols_str);
         stats.insert("running".to_string(), self.is_running().to_string());
-        
+
         if let Some(ref tcp) = self.tcp_forwarder {
             let tcp_stats = tcp.get_stats();
             for (k, v) in tcp_stats {
                 stats.insert(format!("tcp_{}", k), v);
             }
         }
-        
+
         if let Some(ref udp) = self.udp_forwarder {
             let udp_stats = udp.get_stats();
             for (k, v) in udp_stats {
                 stats.insert(format!("udp_{}", k), v);
             }
         }
-        
+
         stats
     }
-    
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    
+
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
@@ -733,10 +802,10 @@ impl SmartForwarder {
     pub async fn initialize(&mut self) -> Result<()> {
         // 初始化公共管理器
         self.common_manager.initialize().await?;
-        
+
         // 简化的初始化信息
         info!("智能转发器初始化完成，开始启动转发规则...");
-        
+
         Ok(())
     }
 
@@ -744,7 +813,7 @@ impl SmartForwarder {
         let rules = self.config.rules.clone();
         let mut success_count = 0;
         let total_count = rules.len();
-        
+
         for rule in &rules {
             match self.start_forwarder(rule).await {
                 Ok(_) => {
@@ -756,40 +825,49 @@ impl SmartForwarder {
                 }
             }
         }
-        
-        info!("启动完成: {} 个规则可用 (总共 {} 个规则)", success_count, total_count);
-        
+
+        info!(
+            "启动完成: {} 个规则可用 (总共 {} 个规则)",
+            success_count, total_count
+        );
+
         // 启动动态更新任务
         if !*self.dynamic_update_started.read().await {
             self.start_dynamic_update_task().await;
             *self.dynamic_update_started.write().await = true;
         }
-        
+
         // 如果没有任何规则启动成功，返回错误
         if success_count == 0 {
-            return Err(anyhow::anyhow!("没有规则成功启动，请检查配置和端口占用情况"));
+            return Err(anyhow::anyhow!(
+                "没有规则成功启动，请检查配置和端口占用情况"
+            ));
         }
-        
+
         Ok(())
     }
 
     async fn start_forwarder(&mut self, rule: &ForwardRule) -> Result<()> {
         let listen_addr = rule.get_listen_addr(&self.config.network.listen_addr);
-        
+
         // 获取最佳目标
         if let Ok(best_target) = self.common_manager.get_best_target(&rule.name).await {
             let target_addr = best_target.to_string();
-            
-            info!("规则 {} 启动: {} -> {}", rule.name, listen_addr, target_addr);
-            
+
+            info!(
+                "规则 {} 启动: {} -> {}",
+                rule.name, listen_addr, target_addr
+            );
+
             // 创建统一转发器
-            let mut unified_forwarder = UnifiedForwarder::new_with_target(rule, &listen_addr, &target_addr);
+            let mut unified_forwarder =
+                UnifiedForwarder::new_with_target(rule, &listen_addr, &target_addr);
             match unified_forwarder.start().await {
                 Ok(_) => {
-                    self.forwarders.write().await.insert(
-                        rule.name.clone(),
-                        Box::new(unified_forwarder),
-                    );
+                    self.forwarders
+                        .write()
+                        .await
+                        .insert(rule.name.clone(), Box::new(unified_forwarder));
                 }
                 Err(e) => {
                     error!("规则 {} 启动失败: {}", rule.name, e);
@@ -799,7 +877,7 @@ impl SmartForwarder {
         } else {
             warn!("规则 {} 没有可用的目标地址", rule.name);
         }
-        
+
         Ok(())
     }
 
@@ -807,20 +885,22 @@ impl SmartForwarder {
         let forwarders = self.forwarders.clone();
         let common_manager = self.common_manager.clone();
         let rules = self.config.rules.clone();
-        
+
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(15));
-            
+
             loop {
                 interval.tick().await;
-                
+
                 for rule in &rules {
                     if let Ok(best_target) = common_manager.get_best_target(&rule.name).await {
                         let target_addr = best_target.to_string();
-                        
+
                         let mut forwarders_guard = forwarders.write().await;
                         if let Some(forwarder) = forwarders_guard.get_mut(&rule.name) {
-                            if let Some(unified) = forwarder.as_any_mut().downcast_mut::<UnifiedForwarder>() {
+                            if let Some(unified) =
+                                forwarder.as_any_mut().downcast_mut::<UnifiedForwarder>()
+                            {
                                 if let Err(e) = unified.update_target(&target_addr).await {
                                     error!("规则 {} 更新目标失败: {}", rule.name, e);
                                 }
@@ -841,14 +921,15 @@ impl SmartForwarder {
         forwarders.clear();
     }
 
+    #[allow(dead_code)]
     pub async fn get_stats(&self) -> HashMap<String, HashMap<String, String>> {
         let mut all_stats = HashMap::new();
         let forwarders = self.forwarders.read().await;
-        
+
         for (name, forwarder) in forwarders.iter() {
             all_stats.insert(name.clone(), forwarder.get_stats());
         }
-        
+
         all_stats
     }
 }

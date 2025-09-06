@@ -29,27 +29,26 @@ impl ConnectionStats {
     pub fn add_bytes_sent(&mut self, bytes: u64) {
         self.bytes_sent += bytes;
     }
-    
+
     pub fn add_bytes_received(&mut self, bytes: u64) {
         self.bytes_received += bytes;
     }
-    
+
     pub fn increment_connections(&mut self) {
         self.connections += 1;
     }
-    
+
     pub fn get_uptime(&self) -> Duration {
         self.start_time.elapsed()
     }
 }
-
 
 pub async fn resolve_target(target: &str) -> Result<SocketAddr> {
     // 1. 尝试直接解析为SocketAddr (IP:PORT格式)
     if let Ok(addr) = target.parse::<SocketAddr>() {
         return Ok(addr);
     }
-    
+
     // 2. 解析 hostname:port 格式
     let parts: Vec<&str> = target.split(':').collect();
     match parts.len() {
@@ -61,9 +60,9 @@ pub async fn resolve_target(target: &str) -> Result<SocketAddr> {
         2 => {
             // 域名:port 格式 - 解析A/AAAA记录，然后拼接端口
             let hostname = parts[0];
-            let port: u16 = parts[1].parse().map_err(|e| {
-                anyhow::anyhow!("无效的端口号 {}: {}", parts[1], e)
-            })?;
+            let port: u16 = parts[1]
+                .parse()
+                .map_err(|e| anyhow::anyhow!("无效的端口号 {}: {}", parts[1], e))?;
             resolve_domain_with_aliyun_dns(hostname, port).await
         }
         _ => {
@@ -79,11 +78,11 @@ async fn resolve_domain_with_aliyun_dns(hostname: &str, port: u16) -> Result<Soc
     let result = tokio::task::spawn_blocking(move || {
         // 创建阿里云DNS解析器
         let mut config = ResolverConfig::new();
-        
+
         // 添加阿里云DNS服务器
         let aliyun_dns1: SocketAddr = "223.5.5.5:53".parse()?;
         let aliyun_dns2: SocketAddr = "223.6.6.6:53".parse()?;
-        
+
         config.add_name_server(trust_dns_resolver::config::NameServerConfig::new(
             aliyun_dns1,
             trust_dns_resolver::config::Protocol::Udp,
@@ -92,13 +91,13 @@ async fn resolve_domain_with_aliyun_dns(hostname: &str, port: u16) -> Result<Soc
             aliyun_dns2,
             trust_dns_resolver::config::Protocol::Udp,
         ));
-        
+
         let mut opts = ResolverOpts::default();
         opts.timeout = Duration::from_secs(5);
         opts.attempts = 2;
-        
+
         let resolver = Resolver::new(config, opts)?;
-        
+
         // 使用阿里云DNS解析A和AAAA记录
         match resolver.lookup_ip(&hostname) {
             Ok(response) => {
@@ -117,8 +116,9 @@ async fn resolve_domain_with_aliyun_dns(hostname: &str, port: u16) -> Result<Soc
                 anyhow::bail!("DNS解析失败 {}: {}", hostname, e)
             }
         }
-    }).await?;
-    
+    })
+    .await?;
+
     let socket_addr = result?;
     Ok(socket_addr)
 }
@@ -130,11 +130,11 @@ async fn resolve_txt_record_with_aliyun_dns(hostname: &str) -> Result<SocketAddr
     let result = tokio::task::spawn_blocking(move || {
         // 创建阿里云DNS解析器
         let mut config = ResolverConfig::new();
-        
+
         // 添加阿里云DNS服务器
         let aliyun_dns1: SocketAddr = "223.5.5.5:53".parse()?;
         let aliyun_dns2: SocketAddr = "223.6.6.6:53".parse()?;
-        
+
         config.add_name_server(trust_dns_resolver::config::NameServerConfig::new(
             aliyun_dns1,
             trust_dns_resolver::config::Protocol::Udp,
@@ -143,23 +143,23 @@ async fn resolve_txt_record_with_aliyun_dns(hostname: &str) -> Result<SocketAddr
             aliyun_dns2,
             trust_dns_resolver::config::Protocol::Udp,
         ));
-        
+
         let mut opts = ResolverOpts::default();
         opts.timeout = Duration::from_secs(5);
         opts.attempts = 2;
-        
+
         let resolver = Resolver::new(config, opts)?;
-        
+
         // 查询TXT记录
         match resolver.txt_lookup(&hostname) {
             Ok(txt_response) => {
                 for txt in txt_response.iter() {
                     for txt_data in txt.iter() {
                         let txt_string = String::from_utf8_lossy(txt_data);
-                        
+
                         // 清理TXT记录内容（移除引号、空格等）
                         let clean_txt = txt_string.trim_matches('"').trim();
-                        
+
                         // 尝试解析TXT记录中的IP:PORT格式
                         if let Ok(addr) = clean_txt.parse::<SocketAddr>() {
                             return Ok(addr);
@@ -172,8 +172,9 @@ async fn resolve_txt_record_with_aliyun_dns(hostname: &str) -> Result<SocketAddr
                 anyhow::bail!("TXT记录查询失败 {}: {}", hostname, e)
             }
         }
-    }).await?;
-    
+    })
+    .await?;
+
     let socket_addr = result?;
     Ok(socket_addr)
 }
@@ -181,7 +182,7 @@ async fn resolve_txt_record_with_aliyun_dns(hostname: &str) -> Result<SocketAddr
 pub async fn test_connection(target: &str) -> Result<Duration> {
     let addr = resolve_target(target).await?;
     let start = Instant::now();
-    
+
     // 统一使用5秒超时时间
     match tokio::time::timeout(Duration::from_secs(5), tokio::net::TcpStream::connect(addr)).await {
         Ok(Ok(_)) => Ok(start.elapsed()),
@@ -196,25 +197,38 @@ pub async fn test_connection(target: &str) -> Result<Duration> {
 /// 获取标准统计信息的公共函数
 pub fn get_standard_stats(stats: &ConnectionStats) -> HashMap<String, String> {
     let mut result = HashMap::new();
-    
+
     result.insert("connections".to_string(), stats.connections.to_string());
     result.insert("bytes_sent".to_string(), stats.bytes_sent.to_string());
-    result.insert("bytes_received".to_string(), stats.bytes_received.to_string());
+    result.insert(
+        "bytes_received".to_string(),
+        stats.bytes_received.to_string(),
+    );
     result.insert("uptime".to_string(), format!("{:?}", stats.get_uptime()));
-    
+
     // 增强的性能指标
     let uptime_secs = stats.get_uptime().as_secs() as f64;
     if uptime_secs > 0.0 {
-        let avg_throughput_mbps = (stats.bytes_sent + stats.bytes_received) as f64 / (1024.0 * 1024.0) / uptime_secs;
-        result.insert("avg_throughput_mbps".to_string(), format!("{:.2}", avg_throughput_mbps));
-        result.insert("connections_per_hour".to_string(), format!("{:.1}", stats.connections as f64 * 3600.0 / uptime_secs));
+        let avg_throughput_mbps =
+            (stats.bytes_sent + stats.bytes_received) as f64 / (1024.0 * 1024.0) / uptime_secs;
+        result.insert(
+            "avg_throughput_mbps".to_string(),
+            format!("{:.2}", avg_throughput_mbps),
+        );
+        result.insert(
+            "connections_per_hour".to_string(),
+            format!("{:.1}", stats.connections as f64 * 3600.0 / uptime_secs),
+        );
     }
-    
+
     result
 }
 
 /// 获取带目标地址的统计信息
-pub fn get_stats_with_target(stats: &ConnectionStats, target_addr: &str) -> HashMap<String, String> {
+pub fn get_stats_with_target(
+    stats: &ConnectionStats,
+    target_addr: &str,
+) -> HashMap<String, String> {
     let mut result = get_standard_stats(stats);
     result.insert("target_addr".to_string(), target_addr.to_string());
     result
