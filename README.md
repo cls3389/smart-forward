@@ -86,7 +86,7 @@ rules:
     targets:
       - "192.168.1.100:443"
       - "backup.example.com:443"
-      
+
   # RDP 服务 (TCP+UDP)
   - name: "RDP"
     listen_port: 99
@@ -303,9 +303,9 @@ metrics:
 
 ## 📞 支持
 
-- 📧 邮箱: your.email@example.com
-- 🐛 问题: [GitHub Issues](https://github.com/your-username/smart-forward/issues)
-- 💬 讨论: [GitHub Discussions](https://github.com/your-username/smart-forward/discussions)
+- 📧 邮箱: cls3389@example.com
+- 🐛 问题: [GitHub Issues](https://github.com/cls3389/smart-forward/issues)
+- 💬 讨论: [GitHub Discussions](https://github.com/cls3389/smart-forward/discussions)
 
 ---
 

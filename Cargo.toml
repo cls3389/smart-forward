@@ -2,11 +2,11 @@
 name = "smart-forward"
 version = "0.1.0"
 edition = "2021"
-authors = ["Your Name <your.email@example.com>"]
+authors = ["cls3389 <cls3389@example.com>"]
 description = "智能网络转发器 - 支持TCP、UDP、HTTP协议的高性能转发工具"
 license = "MIT"
-repository = "https://github.com/your-username/smart-forward"
-homepage = "https://github.com/your-username/smart-forward"
+repository = "https://github.com/cls3389/smart-forward"
+homepage = "https://github.com/cls3389/smart-forward"
 keywords = ["proxy", "forward", "tcp", "udp", "http", "network"]
 categories = ["network-programming", "command-line-utilities"]
 readme = "README.md"

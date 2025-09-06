@@ -168,8 +168,8 @@ jobs:
           
           ## 🐳 Docker
           \`\`\`bash
-          docker pull ghcr.io/${{ github.repository }}:${VERSION}
-          docker run -d --name smart-forward -p 443:443 ghcr.io/${{ github.repository }}:${VERSION}
+          docker pull ghcr.io/cls3389/smart-forward:${VERSION}
+          docker run -d --name smart-forward -p 443:443 ghcr.io/cls3389/smart-forward:${VERSION}
           \`\`\`
           
           ## 📋 使用说明
