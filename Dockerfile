@@ -1,5 +1,5 @@
 # 智能网络转发器 Docker 镜像
-FROM rust:1.75-slim as builder
+FROM rust:1.88-slim AS builder
 
 # 设置工作目录
 WORKDIR /app
