@@ -134,9 +134,9 @@ rules:
     listen_port: 443
     protocol: "tcp"
     targets:
-      - "192.168.5.254:443"      # 主服务器
-      - "121.40.167.222:50443"   # 备用服务器
-      - "stun-443.4.ipto.top"    # 备用服务器
+      - "192.168.1.100:443"      # 主服务器
+      - "backup.example.com:443"  # 备用服务器
+      - "stun.example.com"        # 备用服务器
 ```
 
 ### 🔍 **健康检查机制**
@@ -265,9 +265,9 @@ $env:RUST_LOG="debug"
 .\target\release\smart-forward.exe
 
 # 网络诊断
-ping 192.168.5.254
-nslookup drive.4.ipto.top
-telnet 192.168.5.254 443
+ping 192.168.1.100
+nslookup drive.example.com
+telnet 192.168.1.100 443
 ```
 
 ---
