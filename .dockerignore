@@ -1,15 +1,44 @@
-# 忽略不必要的文件，优化 Docker 构建
-target/
-.git/
+# Git
+.git
 .gitignore
+
+# Documentation
+README.md
 *.md
-LICENSE
+
+# Build artifacts
+target/
+Cargo.lock
+
+# IDE
 .vscode/
 .idea/
-*.bat
-*.sh
-docker-compose.yml
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Test files
+test/
+tests/
+
+# CI/CD
+.github/
+
+# Docker
 Dockerfile
 .dockerignore
-logs/
-*.log
+docker-compose.yml
+
+# Scripts
+*.sh
+*.ps1
+*.bat
+
+# Config examples
+config.yaml.example

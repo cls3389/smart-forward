@@ -8,7 +8,12 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# 设置环境变量
+ENV CARGO_TERM_COLOR=always
+ENV RUST_BACKTRACE=1
 
 # 复制 Cargo 文件
 COPY Cargo.toml Cargo.lock ./
@@ -17,13 +22,13 @@ COPY Cargo.toml Cargo.lock ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 
 # 预编译依赖
-RUN cargo build --release && rm -rf src target/release/deps/smart*
+RUN cargo build --release
 
 # 复制源代码
 COPY src ./src
 
 # 构建应用
-RUN cargo build --release
+RUN cargo build --release --verbose
 
 # 运行时镜像
 FROM debian:bookworm-slim
