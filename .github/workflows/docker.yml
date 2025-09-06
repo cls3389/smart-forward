@@ -67,7 +67,7 @@ jobs:
           output-file: sbom.spdx.json
 
       - name: 上传 SBOM
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: sbom
           path: sbom.spdx.json
