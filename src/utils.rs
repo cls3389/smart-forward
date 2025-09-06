@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
-use trust_dns_resolver::{
+use hickory_resolver::{
     config::{ResolverConfig, ResolverOpts},
     Resolver,
 };
@@ -83,13 +83,13 @@ async fn resolve_domain_with_aliyun_dns(hostname: &str, port: u16) -> Result<Soc
         let aliyun_dns1: SocketAddr = "223.5.5.5:53".parse()?;
         let aliyun_dns2: SocketAddr = "223.6.6.6:53".parse()?;
 
-        config.add_name_server(trust_dns_resolver::config::NameServerConfig::new(
+        config.add_name_server(hickory_resolver::config::NameServerConfig::new(
             aliyun_dns1,
-            trust_dns_resolver::config::Protocol::Udp,
+            hickory_resolver::config::Protocol::Udp,
         ));
-        config.add_name_server(trust_dns_resolver::config::NameServerConfig::new(
+        config.add_name_server(hickory_resolver::config::NameServerConfig::new(
             aliyun_dns2,
-            trust_dns_resolver::config::Protocol::Udp,
+            hickory_resolver::config::Protocol::Udp,
         ));
 
         let mut opts = ResolverOpts::default();
@@ -135,13 +135,13 @@ async fn resolve_txt_record_with_aliyun_dns(hostname: &str) -> Result<SocketAddr
         let aliyun_dns1: SocketAddr = "223.5.5.5:53".parse()?;
         let aliyun_dns2: SocketAddr = "223.6.6.6:53".parse()?;
 
-        config.add_name_server(trust_dns_resolver::config::NameServerConfig::new(
+        config.add_name_server(hickory_resolver::config::NameServerConfig::new(
             aliyun_dns1,
-            trust_dns_resolver::config::Protocol::Udp,
+            hickory_resolver::config::Protocol::Udp,
         ));
-        config.add_name_server(trust_dns_resolver::config::NameServerConfig::new(
+        config.add_name_server(hickory_resolver::config::NameServerConfig::new(
             aliyun_dns2,
-            trust_dns_resolver::config::Protocol::Udp,
+            hickory_resolver::config::Protocol::Udp,
         ));
 
         let mut opts = ResolverOpts::default();
