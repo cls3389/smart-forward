@@ -25,7 +25,8 @@
 从 [Releases](https://github.com/your-username/smart-forward/releases) 页面下载对应平台的二进制文件：
 
 - **Windows**: `smart-forward-windows-x86_64.zip`
-- **macOS**: `smart-forward-macos-x86_64.tar.gz` 或 `smart-forward-macos-aarch64.tar.gz`
+- **macOS Intel**: `smart-forward-macos-x86_64.tar.gz` (Intel Mac)
+- **macOS Apple Silicon**: `smart-forward-macos-aarch64.tar.gz` (M1/M2/M3/M4 Mac)
 - **Linux**: `smart-forward-linux-x86_64.tar.gz` 或 `smart-forward-linux-aarch64.tar.gz`
 
 ### 使用 Docker

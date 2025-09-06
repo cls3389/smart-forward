@@ -103,13 +103,14 @@ jobs:
             target: x86_64-pc-windows-msvc
             artifact_name: smart-forward-windows-x86_64.exe
             
-          # macOS
+          # macOS Intel (x86_64)
           - os: macos-latest
             platform: macos
             arch: x86_64
             target: x86_64-apple-darwin
             artifact_name: smart-forward-macos-x86_64
             
+          # macOS Apple Silicon (M1/M2/M3/M4)
           - os: macos-latest
             platform: macos
             arch: aarch64
@@ -150,6 +151,15 @@ jobs:
       - name: 安装 Rust 目标
         run: rustup target add ${{ matrix.target }}
 
+      - name: 配置 macOS 构建环境
+        if: matrix.platform == 'macos'
+        run: |
+          # 确保使用最新的 Xcode 命令行工具
+          sudo xcode-select --install || true
+          # 设置 macOS 构建优化
+          echo "CARGO_TARGET_AARCH64_APPLE_DARWIN_RUNNER=arch -arm64" >> $GITHUB_ENV
+          echo "CARGO_TARGET_X86_64_APPLE_DARWIN_RUNNER=arch -x86_64" >> $GITHUB_ENV
+
       - name: 安装交叉编译工具链 (Linux)
         if: matrix.platform == 'linux' && matrix.arch == 'aarch64'
         run: |
@@ -166,6 +176,14 @@ jobs:
 
       - name: 构建项目
         run: |
+          # 为 macOS 设置优化构建参数
+          if [ "${{ matrix.platform }}" = "macos" ]; then
+            export RUSTFLAGS="-C target-cpu=native"
+            if [ "${{ matrix.arch }}" = "aarch64" ]; then
+              export RUSTFLAGS="-C target-cpu=apple-m1"
+            fi
+          fi
+          
           cargo build --release --target ${{ matrix.target }}
           mkdir -p dist/${{ matrix.platform }}-${{ matrix.arch }}
 
