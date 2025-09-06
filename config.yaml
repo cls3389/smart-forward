@@ -36,9 +36,9 @@ rules:
     protocol: "tcp"           # 单TCP协议 (HTTPS标准)
     buffer_size: 4096         # 4KB缓冲区，适合Web请求
     targets:                  # 按优先级排序，支持故障转移
-      - "192.168.5.254:443"        # 优先级1: 主服务器
-      - "121.40.167.222:50443"     # 优先级2: 备用服务器
-      - "stun-443.4.ipto.top"      # 优先级3: 动态域名(TXT记录)
+      - "192.168.1.100:443"        # 优先级1: 主服务器
+      - "backup.example.com:443"   # 优先级2: 备用服务器
+      - "stun.example.com"         # 优先级3: 动态域名(TXT记录)
       
   # --------------------------------
   # RDP 服务转发 (99端口)
@@ -49,9 +49,9 @@ rules:
     # 协议: 不指定时默认支持TCP+UDP双协议
     buffer_size: 16384        # 16KB缓冲区，适合RDP数据流
     targets:
-      - "192.168.5.12:3389"        # 优先级1: 主RDP服务器  
-      - "121.40.167.222:57111"     # 优先级2: 备用RDP端口
-      - "ewin10.4.ipto.top"        # 优先级3: 动态域名解析
+      - "192.168.1.200:3389"       # 优先级1: 主RDP服务器  
+      - "rdp-backup.example.com"   # 优先级2: 备用RDP服务器
+      - "rdp.example.com"          # 优先级3: 动态域名解析
       
   # --------------------------------
   # 网盘服务转发 (6690端口) 
@@ -61,9 +61,9 @@ rules:
     protocol: "tcp"           # 单TCP协议 (文件传输)
     buffer_size: 32768        # 32KB大缓冲区，优化文件传输
     targets:
-      - "192.168.5.3:6690"         # 优先级1: 主网盘服务器
-      - "121.40.167.222:6690"      # 优先级2: 备用网盘端口  
-      - "drive.4.ipto.top"         # 优先级3: 动态域名(TXT记录)
+      - "192.168.1.300:6690"       # 优先级1: 主网盘服务器
+      - "drive-backup.example.com" # 优先级2: 备用网盘服务器  
+      - "drive.example.com"        # 优先级3: 动态域名(TXT记录)
 
   # --------------------------------
   # 分离式RDP (999端口)
@@ -74,14 +74,14 @@ rules:
     protocol: "tcp" 
     buffer_size: 16384    
     targets:
-      - "ewin10.4.ipto.top"        # TCP专用目标
+      - "rdp-tcp.example.com"      # TCP专用目标
 
   - name: "uRDP"            # RDP UDP协议  
     listen_port: 999
     protocol: "udp"
     buffer_size: 16384    
     targets:
-      - "uewin10.4.ipto.top"       # UDP专用目标
+      - "rdp-udp.example.com"      # UDP专用目标
 
 # ================================
 # 配置说明：
