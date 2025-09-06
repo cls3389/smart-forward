@@ -1,58 +1,71 @@
-name: 自动发布
+name: 发布 v1.0.0 正式版本
 
 on:
-  push:
-    branches: [ main, master ]
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
-      tag:
-        description: '发布标签'
+      version:
+        description: '发布版本号'
         required: true
+        default: 'v1.0.0'
         type: string
+      publish_cargo:
+        description: '发布到 Cargo'
+        required: false
+        default: false
+        type: boolean
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
 
 jobs:
   # 构建所有平台的二进制文件
   build:
-    name: 构建发布版本
+    name: 构建 ${{ matrix.platform }} (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
+          # Windows
           - os: windows-latest
             platform: windows
             arch: x86_64
             target: x86_64-pc-windows-msvc
             binary_name: smart-forward.exe
+            artifact_name: smart-forward-windows-x86_64.zip
             
+          # macOS Intel
           - os: macos-latest
             platform: macos
             arch: x86_64
             target: x86_64-apple-darwin
             binary_name: smart-forward
+            artifact_name: smart-forward-macos-x86_64.tar.gz
             
+          # macOS Apple Silicon
           - os: macos-latest
             platform: macos
             arch: aarch64
             target: aarch64-apple-darwin
             binary_name: smart-forward
+            artifact_name: smart-forward-macos-aarch64.tar.gz
             
+          # Linux x86_64
           - os: ubuntu-latest
             platform: linux
             arch: x86_64
             target: x86_64-unknown-linux-gnu
             binary_name: smart-forward
+            artifact_name: smart-forward-linux-x86_64.tar.gz
             
+          # Linux ARM64
           - os: ubuntu-latest
             platform: linux
             arch: aarch64
             target: aarch64-unknown-linux-gnu
             binary_name: smart-forward
+            artifact_name: smart-forward-linux-aarch64.tar.gz
 
     steps:
       - name: 检出代码
@@ -87,6 +100,9 @@ jobs:
           echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar" >> $GITHUB_ENV
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
 
+      - name: 安装 Rust 目标
+        run: rustup target add ${{ matrix.target }}
+
       - name: 构建项目
         run: cargo build --release --target ${{ matrix.target }}
 
@@ -101,24 +117,59 @@ jobs:
         run: |
           cd release/${{ matrix.platform }}-${{ matrix.arch }}
           if [ "${{ matrix.platform }}" = "windows" ]; then
-            powershell Compress-Archive -Path * -DestinationPath ../smart-forward-${{ matrix.platform }}-${{ matrix.arch }}.zip
+            powershell Compress-Archive -Path * -DestinationPath ../${{ matrix.artifact_name }}
           else
-            tar -czf ../smart-forward-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz *
+            tar -czf ../${{ matrix.artifact_name }} *
           fi
 
       - name: 上传构建产物
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: smart-forward-${{ matrix.platform }}-${{ matrix.arch }}
-          path: release/smart-forward-${{ matrix.platform }}-${{ matrix.arch }}.*
+          name: ${{ matrix.artifact_name }}
+          path: release/${{ matrix.artifact_name }}
           retention-days: 30
+
+  # 构建多架构 Docker 镜像
+  docker:
+    name: 构建多架构 Docker 镜像
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录到 GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 构建并推送多架构 Docker 镜像
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.simple
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:1.0.0
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
 
   # 创建 GitHub Release
   release:
     name: 创建 GitHub Release
     runs-on: ubuntu-latest
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    needs: [build, docker]
+    if: github.event_name == 'workflow_dispatch'
 
     steps:
       - name: 检出代码
@@ -139,21 +190,19 @@ jobs:
       - name: 生成发布说明
         id: release_notes
         run: |
-          # 获取版本号
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.tag }}"
-          else
-            VERSION="${GITHUB_REF#refs/tags/}"
-          fi
+          VERSION="${{ github.event.inputs.version }}"
           
-          # 生成发布说明
           cat > release-notes.md << EOF
-          # Smart Forward v${VERSION}
+          # Smart Forward $VERSION
           
           ## 🚀 新功能
-          - 智能网络转发器跨平台支持
+          - 智能网络转发器正式发布
           - 支持 Windows、macOS、Linux (x86_64/ARM64)
           - Docker 多架构镜像支持
+          - 支持 TCP、UDP、HTTP 协议转发
+          - 动态地址解析与故障转移
+          - DNS 缓存优化
+          - 健康检查与自动切换
           
           ## 📦 下载
           
@@ -170,16 +219,25 @@ jobs:
           
           ## 🐳 Docker
           \`\`\`bash
-          docker pull ghcr.io/cls3389/smart-forward:${VERSION}
-          docker run -d --name smart-forward -p 443:443 ghcr.io/cls3389/smart-forward:${VERSION}
+          # 拉取最新镜像
+          docker pull ghcr.io/${{ github.repository }}:1.0.0
+          
+          # 运行容器
+          docker run -d \\
+            --name smart-forward \\
+            -p 443:443 \\
+            -p 99:99 \\
+            -p 6690:6690 \\
+            -p 999:999 \\
+            -v \$(pwd)/config.yaml:/app/config.yaml:ro \\
+            ghcr.io/${{ github.repository }}:1.0.0
           \`\`\`
           
           ## 📋 使用说明
           1. 下载对应平台的压缩包
           2. 解压到目标目录
-          3. 复制 \`config.yaml.example\` 为 \`config.yaml\`
-          4. 根据需求修改配置文件
-          5. 运行程序
+          3. 复制 \`config.yaml\` 并根据需求修改配置
+          4. 运行程序
           
           ## 🔧 配置示例
           \`\`\`yaml
@@ -198,6 +256,14 @@ jobs:
               targets:
                 - "your-server:443"
           \`\`\`
+          
+          ## 🛠️ 技术特性
+          - 高性能异步网络处理
+          - 支持同端口多协议 (TCP+UDP)
+          - HTTP 自动跳转 HTTPS
+          - 智能故障转移机制
+          - 完整的日志记录
+          - 跨平台兼容性
           EOF
           
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -210,16 +276,16 @@ jobs:
           body_path: release-notes.md
           files: release-files/*
           draft: false
-          prerelease: ${{ contains(env.VERSION, 'beta') || contains(env.VERSION, 'alpha') || contains(env.VERSION, 'rc') }}
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # 发布到 Cargo
-  publish:
+  # 发布到 Cargo (可选)
+  publish-cargo:
     name: 发布到 Cargo
     runs-on: ubuntu-latest
     needs: release
-    if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref, 'beta') && !contains(github.ref, 'alpha') && !contains(github.ref, 'rc')
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish_cargo == 'true'
 
     steps:
       - name: 检出代码
