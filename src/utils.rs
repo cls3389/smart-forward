@@ -1,11 +1,11 @@
 use anyhow::Result;
-use std::collections::HashMap;
-use std::net::SocketAddr;
-use std::time::{Duration, Instant};
 use hickory_resolver::{
     config::{ResolverConfig, ResolverOpts},
     Resolver,
 };
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::time::{Duration, Instant};
 
 pub struct ConnectionStats {
     pub bytes_sent: u64,
