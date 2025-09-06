@@ -174,7 +174,8 @@ jobs:
           echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar" >> $GITHUB_ENV
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
 
-      - name: 构建项目
+      - name: 构建项目 (Unix)
+        if: matrix.platform != 'windows'
         run: |
           # 为 macOS 设置优化构建参数
           if [ "${{ matrix.platform }}" = "macos" ]; then
@@ -187,27 +188,49 @@ jobs:
           cargo build --release --target ${{ matrix.target }}
           mkdir -p dist/${{ matrix.platform }}-${{ matrix.arch }}
 
-      - name: 复制二进制文件
+      - name: 构建项目 (Windows)
+        if: matrix.platform == 'windows'
+        shell: powershell
         run: |
-          if [ "${{ matrix.platform }}" = "windows" ]; then
-            cp target/${{ matrix.target }}/release/smart-forward.exe dist/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.artifact_name }}
-          else
-            cp target/${{ matrix.target }}/release/smart-forward dist/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.artifact_name }}
-          fi
+          cargo build --release --target ${{ matrix.target }}
+          New-Item -ItemType Directory -Force -Path "dist/${{ matrix.platform }}-${{ matrix.arch }}"
 
-      - name: 复制配置文件
+      - name: 复制二进制文件 (Unix)
+        if: matrix.platform != 'windows'
+        run: |
+          cp target/${{ matrix.target }}/release/smart-forward dist/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.artifact_name }}
+
+      - name: 复制二进制文件 (Windows)
+        if: matrix.platform == 'windows'
+        shell: powershell
+        run: |
+          Copy-Item "target/${{ matrix.target }}/release/smart-forward.exe" "dist/${{ matrix.platform }}-${{ matrix.arch }}/${{ matrix.artifact_name }}"
+
+      - name: 复制配置文件 (Unix)
+        if: matrix.platform != 'windows'
         run: |
           cp config.yaml.example dist/${{ matrix.platform }}-${{ matrix.arch }}/config.yaml
           cp README.md dist/${{ matrix.platform }}-${{ matrix.arch }}/README.md 2>/dev/null || true
 
-      - name: 创建压缩包
+      - name: 复制配置文件 (Windows)
+        if: matrix.platform == 'windows'
+        shell: powershell
+        run: |
+          Copy-Item "config.yaml.example" "dist/${{ matrix.platform }}-${{ matrix.arch }}/config.yaml"
+          if (Test-Path "README.md") { Copy-Item "README.md" "dist/${{ matrix.platform }}-${{ matrix.arch }}/README.md" }
+
+      - name: 创建压缩包 (Unix)
+        if: matrix.platform != 'windows'
         run: |
           cd dist/${{ matrix.platform }}-${{ matrix.arch }}
-          if [ "${{ matrix.platform }}" = "windows" ]; then
-            powershell Compress-Archive -Path * -DestinationPath ../${{ matrix.platform }}-${{ matrix.arch }}.zip
-          else
-            tar -czf ../${{ matrix.platform }}-${{ matrix.arch }}.tar.gz *
-          fi
+          tar -czf ../${{ matrix.platform }}-${{ matrix.arch }}.tar.gz *
+
+      - name: 创建压缩包 (Windows)
+        if: matrix.platform == 'windows'
+        shell: powershell
+        run: |
+          Set-Location "dist/${{ matrix.platform }}-${{ matrix.arch }}"
+          Compress-Archive -Path * -DestinationPath "../${{ matrix.platform }}-${{ matrix.arch }}.zip"
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
