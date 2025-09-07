@@ -3,36 +3,11 @@ version: '3.8'
 services:
   smart-forward:
     image: smart-forward:latest
-    container_name: smart-forward-container
+    container_name: smart-forward
     restart: unless-stopped
-    
-    # 使用 host 网络模式
     network_mode: host
-    
-    # 挂载配置文件
     volumes:
       - "./config.yaml:/app/config.yaml:ro"
-      - "./logs:/app/logs"  # 日志目录 (可选)
-    
-    # 环境变量
     environment:
       - RUST_LOG=info
       - TZ=Asia/Shanghai
-    
-    # 健康检查
-    healthcheck:
-      test: ["/usr/local/bin/smart-forward", "--validate-config"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    
-    # 资源限制 (可选)
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-          cpus: '0.5'
-        reservations:
-          memory: 64M
-          cpus: '0.1'
