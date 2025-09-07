@@ -174,7 +174,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: Dockerfile
+          file: Dockerfile.tiny
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
@@ -182,8 +182,6 @@ jobs:
             ghcr.io/${{ github.repository }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          build-args: |
-            RUSTFLAGS=-C target-cpu=native
 
   # 创建 GitHub Release
   release:
