@@ -145,6 +145,7 @@ jobs:
       contents: read
       packages: write
       id-token: write
+      actions: read
     
     steps:
       - name: 检出代码
@@ -153,12 +154,20 @@ jobs:
       - name: 设置 Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: 调试权限信息
+        run: |
+          echo "GitHub Actor: ${{ github.actor }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Ref Name: ${{ github.ref_name }}"
+          echo "Event Name: ${{ github.event_name }}"
+          echo "Token available: ${{ secrets.GITHUB_TOKEN != '' }}"
+
       - name: 登录到 GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GHCR_TOKEN }}
           logout: true
 
       - name: 构建并推送多架构 Docker 镜像
@@ -171,6 +180,11 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:${{ github.ref_name }}
             ghcr.io/${{ github.repository }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            HTTP_PROXY=http://127.0.0.1:7897
+            HTTPS_PROXY=http://127.0.0.1:7897
 
   # 创建 GitHub Release
   release:
