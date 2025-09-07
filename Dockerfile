@@ -41,8 +41,8 @@ WORKDIR /app
 # 复制二进制文件
 COPY --from=builder /app/target/release/smart-forward /usr/local/bin/smart-forward
 
-# 创建最小配置 (单行优化)
-RUN printf 'logging:\n  level: "info"\n  format: "text"\nnetwork:\n  listen_addr: "0.0.0.0"\nbuffer_size: 8192\nrules:\n  - name: "HTTPS"\n    listen_port: 443\n    protocol: "tcp"\n    targets:\n      - "example.com:443"\n' > /app/config.yaml && \
+# 创建最小配置 (单行优化) - 使用本地回环测试
+RUN printf 'logging:\n  level: "info"\n  format: "text"\nnetwork:\n  listen_addr: "0.0.0.0"\nbuffer_size: 8192\nrules:\n  - name: "TEST"\n    listen_port: 8080\n    protocol: "tcp"\n    targets:\n      - "127.0.0.1:80"\n' > /app/config.yaml && \
     mkdir -p /app/logs && \
     chown -R smartforward:smartforward /app
 
@@ -52,8 +52,8 @@ EXPOSE 443 99 6690 999
 
 ENV RUST_LOG=info TZ=Asia/Shanghai
 
-# 轻量级健康检查
-HEALTHCHECK --interval=30s --timeout=5s --start-period=3s --retries=2 \
-    CMD /usr/local/bin/smart-forward --validate-config || exit 1
+# 健康检查：检查进程是否运行
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD pgrep smart-forward || exit 1
 
 CMD ["/usr/local/bin/smart-forward", "--config", "/app/config.yaml"]

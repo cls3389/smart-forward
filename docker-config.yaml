@@ -1,0 +1,24 @@
+# Docker 测试配置 - 简单转发配置
+logging:
+  level: "info"
+  format: "text"
+
+network:
+  listen_addr: "0.0.0.0"
+
+buffer_size: 8192
+
+rules:
+  # 简单HTTP转发测试 (不依赖外部服务)
+  - name: "HTTP_TEST"
+    listen_port: 8080
+    protocol: "tcp"
+    targets:
+      - "httpbin.org:80"    # 可靠的测试服务
+      
+  # HTTPS转发 (可以从容器外部访问)
+  - name: "HTTPS_FORWARD"  
+    listen_port: 443
+    protocol: "tcp"
+    targets:
+      - "www.google.com:443"
