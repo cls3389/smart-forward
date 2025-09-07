@@ -1,17 +1,16 @@
-# 极致优化的智能网络转发器 Docker 镜像
-# 目标: 最小体积 + 完整功能
-FROM rust:1.88-alpine AS builder
+# 智能网络转发器 Docker 镜像 - 使用Ubuntu确保兼容性
+FROM rust:1.88-bookworm AS builder
 
 WORKDIR /app
 
-# 安装最小构建依赖
-RUN apk add --no-cache \
-    musl-dev \
-    pkgconfig \
-    openssl-dev \
-    openssl-libs-static
+# 安装构建依赖
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# 优化编译参数 (修复LTO冲突)
+# 优化编译参数
 ENV RUSTFLAGS="-C link-arg=-s"
 ENV CARGO_TERM_COLOR=always
 
@@ -28,13 +27,15 @@ COPY src ./src
 RUN cargo build --release && \
     strip target/release/smart-forward
 
-# ===== 运行时镜像 - 使用最小 Alpine =====
-FROM alpine:3.18
+# ===== 运行时镜像 - 使用Ubuntu确保兼容性 =====
+FROM ubuntu:22.04
 
-# 只安装绝对必要的运行时依赖
-RUN apk add --no-cache ca-certificates tzdata && \
-    rm -rf /var/cache/apk/* /tmp/* /var/tmp/* && \
-    adduser -D -s /bin/false smartforward
+# 安装运行时依赖
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    tzdata \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -r -s /bin/false smartforward
 
 WORKDIR /app
 
@@ -54,6 +55,6 @@ ENV RUST_LOG=info TZ=Asia/Shanghai
 
 # 健康检查：检查进程是否运行
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD pgrep smart-forward || exit 1
+    CMD pgrep smart-forward > /dev/null || exit 1
 
 CMD ["/usr/local/bin/smart-forward", "--config", "/app/config.yaml"]
