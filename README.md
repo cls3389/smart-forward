@@ -32,6 +32,16 @@
 - **musl版本** 🔥: 静态链接，零依赖，推荐用于容器和跨发行版部署
 - **GNU版本**: 动态链接，性能稍好，适用于有glibc的传统Linux系统
 
+### 🚀 一键安装 (Linux)
+```bash
+# 默认安装 musl 版本 (推荐)
+curl -fsSL https://raw.githubusercontent.com/cls3389/smart-forward/main/scripts/linux-install.sh | bash
+
+# 安装 GNU 版本
+BINARY_TYPE=gnu curl -fsSL https://raw.githubusercontent.com/cls3389/smart-forward/main/scripts/linux-install.sh | bash
+```
+详细说明请查看 [Linux安装指南](docs/linux-installation.md)
+
 ### 🐳 Docker 镜像 (Alpine 3.18 + musl - 仅5MB)
 ```bash
 # 拉取最新镜像 (支持 AMD64/ARM64)
