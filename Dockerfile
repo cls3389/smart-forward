@@ -11,8 +11,8 @@ RUN apk add --no-cache \
     openssl-dev \
     openssl-libs-static
 
-# 极致优化编译参数
-ENV RUSTFLAGS="-C target-cpu=native -C link-arg=-s -C opt-level=z -C lto=fat -C codegen-units=1"
+# 优化编译参数 (修复LTO冲突)
+ENV RUSTFLAGS="-C link-arg=-s"
 ENV CARGO_TERM_COLOR=always
 
 # 复制依赖文件
