@@ -173,38 +173,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 分离AMD64和ARM64构建以提高稳定性
-      - name: 构建并推送 AMD64 镜像
+      # 仅构建AMD64镜像（加速构建）
+      - name: 构建并推送 Docker 镜像
         uses: docker/build-push-action@v5
         with:
           context: .
           platforms: linux/amd64
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}-amd64
-          cache-from: type=gha,scope=amd64
-          cache-to: type=gha,mode=max,scope=amd64
-
-      - name: 构建并推送 ARM64 镜像  
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/arm64
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}-arm64
-          cache-from: type=gha,scope=arm64
-          cache-to: type=gha,mode=max,scope=arm64
-
-      # 创建多架构清单
-      - name: 创建并推送多架构清单
-        run: |
-          docker buildx imagetools create -t ghcr.io/${{ github.repository }}:${{ github.ref_name }} \
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}-amd64 \
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}-arm64
-          docker buildx imagetools create -t ghcr.io/${{ github.repository }}:latest \
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}-amd64 \
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}-arm64
+            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   # 3️⃣ 自动发布
   create-release:
