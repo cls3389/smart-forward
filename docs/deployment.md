@@ -75,6 +75,7 @@ docker-compose down
 
 ### **生产环境 Docker 配置**
 
+#### **Host网络模式** (简单但可能有端口冲突)
 ```yaml
 version: '3.8'
 
@@ -132,6 +133,105 @@ services:
     depends_on:
       - smart-forward
 ```
+
+#### **macvlan网络模式** (推荐，解决端口冲突)
+```yaml
+version: '3.8'
+
+services:
+  smart-forward:
+    image: ghcr.io/cls3389/smart-forward:latest
+    container_name: smart-forward
+    restart: unless-stopped
+    
+    # 使用 macvlan 网络，容器获得独立IP
+    networks:
+      macvlan_network:
+        ipv4_address: 192.168.1.100  # 修改为您网络中可用的IP
+    
+    # 卷挂载
+    volumes:
+      - "./config.yaml:/app/config.yaml:ro"
+      - "logs:/app/logs"
+      - "/etc/ssl/certs:/etc/ssl/certs:ro"
+    
+    # 环境变量
+    environment:
+      - RUST_LOG=info
+      - TZ=Asia/Shanghai
+    
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/smart-forward", "--validate-config"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    # 日志配置
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# macvlan 网络配置
+networks:
+  macvlan_network:
+    driver: macvlan
+    driver_opts:
+      parent: eth0  # 修改为您的网卡名称 (如 ens33, enp0s3 等)
+    ipam:
+      config:
+        - subnet: 192.168.1.0/24      # 修改为您的网络段
+          gateway: 192.168.1.1        # 修改为您的网关
+          ip_range: 192.168.1.100/32  # 容器IP范围
+
+volumes:
+  logs:
+    driver: local
+```
+
+#### **macvlan网络配置步骤**
+
+1. **检查网络配置**
+```bash
+# 查看网卡名称
+ip addr show
+
+# 查看网络段
+ip route show
+```
+
+2. **修改配置文件**
+```bash
+# 复制 macvlan 配置模板
+cp docker-compose.yml docker-compose.macvlan.yml
+
+# 编辑配置，修改以下参数:
+# - parent: 您的网卡名称 (如 eth0, ens33, enp0s3)
+# - subnet: 您的网络段 (如 192.168.1.0/24, 10.0.0.0/24)
+# - gateway: 您的网关 (如 192.168.1.1, 10.0.0.1)
+# - ipv4_address: 容器IP (确保不与其他设备冲突)
+```
+
+3. **启动服务**
+```bash
+# 使用 macvlan 配置启动
+docker-compose -f docker-compose.macvlan.yml up -d
+
+# 验证容器IP
+docker inspect smart-forward | grep IPAddress
+
+# 测试连接
+ping 192.168.1.100  # 使用您配置的容器IP
+```
+
+#### **macvlan优势**
+- ✅ **完全避免端口冲突** - 容器有独立IP
+- ✅ **性能最优** - 直接网络访问，无NAT开销
+- ✅ **配置简单** - 一次配置，永久解决
+- ✅ **网络隔离** - 容器网络与主机分离
 
 ---
 

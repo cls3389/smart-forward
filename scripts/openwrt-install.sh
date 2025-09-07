@@ -90,30 +90,81 @@ check_dependencies() {
 download_binary() {
     print_info "下载 $APP_NAME 二进制文件..."
     
-    local download_url="$APP_URL/smart-forward-$ARCH.tar.gz"
-    local temp_file="/tmp/smart-forward-$ARCH.tar.gz"
+    # 根据架构选择正确的文件名 (匹配GitHub Release命名)
+    local file_suffix
+    case "$ARCH" in
+        "linux-aarch64")
+            file_suffix="linux-aarch64.tar.gz"
+            ;;
+        "linux-x86_64")
+            file_suffix="linux-x86_64.tar.gz"
+            ;;
+        "linux-armv7")
+            file_suffix="linux-armv7.tar.gz"
+            ;;
+        "linux-mips")
+            print_warn "MIPS架构需要手动编译，使用x86_64版本可能不兼容"
+            file_suffix="linux-x86_64.tar.gz"
+            ;;
+        *)
+            print_error "不支持的架构: $ARCH"
+            exit 1
+            ;;
+    esac
+    
+    local download_url="$APP_URL/smart-forward-$file_suffix"
+    local temp_file="/tmp/smart-forward-$file_suffix"
     
     print_info "下载地址: $download_url"
     
+    # 下载文件
     if $DOWNLOAD_CMD "$temp_file" "$download_url"; then
         print_info "下载成功"
     else
-        print_error "下载失败"
+        print_error "下载失败，请检查网络连接或GitHub Release是否存在"
+        print_info "手动下载: https://github.com/cls3389/smart-forward/releases/latest"
         exit 1
     fi
     
-    # 解压
+    # 解压文件 (GitHub Release中的tar.gz已经是正确格式)
     print_info "解压文件..."
-    tar -xzf "$temp_file" -C /tmp/
+    cd /tmp
+    if tar -xzf "$temp_file"; then
+        print_info "解压成功"
+    else
+        print_error "解压失败，文件可能损坏"
+        exit 1
+    fi
+    
+    # 查找二进制文件 (解压后可能在当前目录或子目录)
+    local binary_file="/tmp/smart-forward"
+    if [ ! -f "$binary_file" ]; then
+        # 尝试在解压目录中查找
+        binary_file=$(find /tmp -name "smart-forward" -type f 2>/dev/null | head -1)
+        if [ -z "$binary_file" ]; then
+            print_error "找不到二进制文件"
+            print_info "解压内容:"
+            ls -la /tmp/ | grep -E "(smart|forward)"
+            exit 1
+        fi
+    fi
     
     # 安装二进制文件
-    print_info "安装二进制文件..."
+    print_info "安装二进制文件到 $BIN_DIR..."
     mkdir -p "$BIN_DIR"
-    cp "/tmp/smart-forward" "$BIN_DIR/"
+    cp "$binary_file" "$BIN_DIR/smart-forward"
     chmod +x "$BIN_DIR/smart-forward"
     
+    # 验证安装
+    if "$BIN_DIR/smart-forward" --version >/dev/null 2>&1; then
+        print_info "二进制文件安装完成并验证成功"
+    else
+        print_warn "二进制文件已安装，但版本验证失败（可能是架构不兼容）"
+    fi
+    
     # 清理临时文件
-    rm -f "$temp_file" "/tmp/smart-forward"
+    rm -f "$temp_file"
+    [ -f "$binary_file" ] && rm -f "$binary_file"
     
     print_info "二进制文件安装完成"
 }
