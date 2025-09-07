@@ -107,8 +107,8 @@ jobs:
 
       - name: 构建二进制 (优化musl静态链接)
         run: |
-          # 设置musl静态链接优化参数
-          if [[ "${{ matrix.target }}" == *"musl"* ]]; then
+          # 设置musl静态链接优化参数 (仅Linux)
+          if [ "${{ matrix.os }}" != "windows-latest" ] && [[ "${{ matrix.target }}" == *"musl"* ]]; then
             export RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-s"
             echo "✅ 启用musl静态链接优化"
           fi
@@ -116,11 +116,10 @@ jobs:
           
           # 验证二进制文件
           echo "📦 验证构建的二进制文件:"
-          ls -la target/${{ matrix.target }}/release/
-          file target/${{ matrix.target }}/release/${{ matrix.binary }} || echo "file命令不可用"
+          ls -la target/${{ matrix.target }}/release/ || dir target\\${{ matrix.target }}\\release\\
           
-          # 如果是musl目标，进行strip优化
-          if [[ "${{ matrix.target }}" == *"musl"* ]]; then
+          # 如果是Linux musl目标，进行strip优化
+          if [ "${{ matrix.os }}" != "windows-latest" ] && [[ "${{ matrix.target }}" == *"musl"* ]]; then
             strip target/${{ matrix.target }}/release/${{ matrix.binary }} 2>/dev/null || echo "⚠️ strip失败或不可用"
             echo "✅ 已优化二进制文件大小"
           fi
