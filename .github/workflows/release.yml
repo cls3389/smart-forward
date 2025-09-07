@@ -148,11 +148,12 @@ jobs:
           path: ${{ matrix.archive }}
           retention-days: 7
 
-  # 2️⃣ Docker多架构构建
+  # 2️⃣ 基于编译好的二进制构建Docker
   build-docker:
-    name: 🐳 Docker多架构构建
+    name: 🐳 Docker镜像构建
     runs-on: ubuntu-latest
-    timeout-minutes: 45  # 增加到45分钟防止超时
+    needs: build-binaries
+    timeout-minutes: 15  # 大幅缩短构建时间
     permissions:
       contents: read
       packages: write
@@ -160,11 +161,41 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
+      - name: 下载Linux二进制文件
+        uses: actions/download-artifact@v4
+        with:
+          name: smart-forward-linux-x86_64.tar.gz
+          path: ./artifacts
+
+      - name: 解压Linux二进制文件
+        run: |
+          cd artifacts
+          tar -xzf smart-forward-linux-x86_64.tar.gz
+          ls -la
+          mv smart-forward ../smart-forward
+          chmod +x ../smart-forward
+
+      - name: 创建简化Dockerfile
+        run: |
+          cat > Dockerfile.binary << 'EOF'
+          FROM ubuntu:22.04
+          RUN apt-get update && apt-get install -y ca-certificates tzdata procps && \
+              rm -rf /var/lib/apt/lists/* && \
+              useradd -r -s /bin/false smartforward
+          WORKDIR /app
+          COPY smart-forward /usr/local/bin/smart-forward
+          RUN chmod +x /usr/local/bin/smart-forward && \
+              mkdir -p /app/logs
+          USER root
+          EXPOSE 443 99 6690 999
+          ENV RUST_LOG=info TZ=Asia/Shanghai
+          HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+              CMD pgrep smart-forward > /dev/null || exit 1
+          CMD ["/usr/local/bin/smart-forward", "--config", "/app/config.yaml"]
+          EOF
+
       - name: 设置 Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          # 启用高级缓存驱动
-          driver-opts: network=host
 
       - name: 登录 GitHub Container Registry
         uses: docker/login-action@v3
@@ -173,11 +204,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 仅构建AMD64镜像（加速构建）
       - name: 构建并推送 Docker 镜像
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: ./Dockerfile.binary
           platforms: linux/amd64
           push: true
           tags: |
