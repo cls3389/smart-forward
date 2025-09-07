@@ -48,8 +48,28 @@ WORKDIR /app
 # 从构建镜像复制二进制文件
 COPY --from=builder /app/target/release/smart-forward /usr/local/bin/smart-forward
 
-# 复制配置文件示例
-COPY config.yaml.example /app/config.yaml
+# 创建默认配置文件
+RUN echo '# ================================' > /app/config.yaml && \
+    echo '# 智能网络转发器配置文件' >> /app/config.yaml && \
+    echo '# ================================' >> /app/config.yaml && \
+    echo '' >> /app/config.yaml && \
+    echo '# 全局配置' >> /app/config.yaml && \
+    echo 'global:' >> /app/config.yaml && \
+    echo '  log_level: "info"' >> /app/config.yaml && \
+    echo '  log_file: "/app/logs/smart-forward.log"' >> /app/config.yaml && \
+    echo '  health_check_interval: 30' >> /app/config.yaml && \
+    echo '  dns_cache_ttl: 300' >> /app/config.yaml && \
+    echo '' >> /app/config.yaml && \
+    echo '# 转发规则' >> /app/config.yaml && \
+    echo 'rules:' >> /app/config.yaml && \
+    echo '  - name: "HTTPS转发"' >> /app/config.yaml && \
+    echo '    listen_port: 443' >> /app/config.yaml && \
+    echo '    protocol: "tcp"' >> /app/config.yaml && \
+    echo '    targets:' >> /app/config.yaml && \
+    echo '      - host: "example.com"' >> /app/config.yaml && \
+    echo '        port: 443' >> /app/config.yaml && \
+    echo '        priority: 1' >> /app/config.yaml && \
+    echo '        health_check: true' >> /app/config.yaml
 
 # 创建日志目录
 RUN mkdir -p /app/logs && chown smartforward:smartforward /app/logs
