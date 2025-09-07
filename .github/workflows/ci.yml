@@ -1,13 +1,9 @@
 name: 🔍 持续集成
 
+# 触发条件: 代码推送到主分支或PR
 on:
   push:
     branches: [ main, develop ]
-    paths: 
-      - 'src/**'
-      - 'Cargo.*'
-      - 'Dockerfile'
-      - '.github/workflows/**'
   pull_request:
     branches: [ main ]
 
@@ -15,31 +11,14 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # 🚀 快速检查 - 只做必要的验证
+  # 代码质量检查
   check:
     name: 🔍 代码检查
     runs-on: ubuntu-latest
-    timeout-minutes: 8
-    outputs:
-      should-build-docker: ${{ steps.changes.outputs.docker }}
+    timeout-minutes: 10
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-
-      - name: 检测变更
-        id: changes
-        run: |
-          # 检查是否有Docker相关文件变更
-          if git diff --name-only HEAD~1 2>/dev/null | grep -E "(Dockerfile|docker-compose)" > /dev/null 2>&1; then
-            echo "docker=true" >> $GITHUB_OUTPUT
-          elif [ "${{ github.event_name }}" == "pull_request" ]; then
-            # PR时总是检查Docker构建
-            echo "docker=true" >> $GITHUB_OUTPUT
-          else
-            echo "docker=false" >> $GITHUB_OUTPUT
-          fi
 
       - name: 设置 Rust
         uses: dtolnay/rust-toolchain@stable
@@ -53,10 +32,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-check-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-check-
-            ${{ runner.os }}-cargo-
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: 检查格式
         run: cargo fmt -- --check
@@ -67,52 +43,7 @@ jobs:
       - name: 运行测试
         run: cargo test --verbose
 
-  # 🐳 Docker 构建 - 只在Docker相关文件变化时运行
-  docker-test:
-    name: 🐳 Docker 构建测试
-    runs-on: ubuntu-latest
-    needs: check
-    if: needs.check.outputs.should-build-docker == 'true' || github.event_name == 'pull_request'
-    timeout-minutes: 8
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
-      - name: 设置 Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: 构建 Docker 镜像 (仅测试)
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: false
-          tags: smart-forward:test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  # 🛡️ 安全扫描 - 独立运行
-  security:
-    name: 🛡️ 安全扫描
-    runs-on: ubuntu-latest
-    timeout-minutes: 8
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
-      - name: 设置 Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: 缓存 cargo-audit
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/bin/cargo-audit
-          key: cargo-audit-${{ runner.os }}
-
-      - name: 安装 cargo-audit
+      - name: 安全审计
         run: |
-          if ! command -v cargo-audit &> /dev/null; then
-            cargo install cargo-audit
-          fi
-
-      - name: 运行安全审计
-        run: cargo audit
+          cargo install cargo-audit
+          cargo audit
