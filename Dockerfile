@@ -5,12 +5,16 @@ FROM rust:1.88-slim AS builder
 WORKDIR /app
 
 # 安装构建依赖
-RUN apt-get update && apt-get install -y \
+RUN apt-get update --fix-missing && \
+    apt-get install -y --no-install-recommends \
     pkg-config \
     libssl-dev \
     ca-certificates \
     build-essential \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /tmp/* \
+    && rm -rf /var/tmp/*
 
 # 设置环境变量
 ENV CARGO_TERM_COLOR=always
@@ -35,9 +39,13 @@ RUN cargo build --release --verbose
 FROM debian:bookworm-slim
 
 # 安装运行时依赖
-RUN apt-get update && apt-get install -y \
+RUN apt-get update --fix-missing && \
+    apt-get install -y --no-install-recommends \
     ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /tmp/* \
+    && rm -rf /var/tmp/*
 
 # 创建非 root 用户
 RUN useradd -r -s /bin/false smartforward
