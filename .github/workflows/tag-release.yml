@@ -205,7 +205,7 @@ jobs:
         run: |
           mkdir -p release-files
           find artifacts -name "*.zip" -o -name "*.tar.gz" | while read file; do
-            cp "$file" release-files/
+            cp -r "$file" release-files/
           done
           ls -la release-files/
 
