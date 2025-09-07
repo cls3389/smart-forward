@@ -82,27 +82,45 @@ jobs:
       - name: 打包 (Unix)
         if: matrix.os != 'windows-latest'
         run: |
-          mkdir dist
+          echo "创建打包目录..."
+          mkdir -p dist
+          echo "复制二进制文件..."
           cp target/${{ matrix.target }}/release/${{ matrix.binary }} dist/
+          echo "复制配置文件..."
           cp config.yaml.example dist/config.yaml
           cp README.md dist/
+          echo "打包内容:"
+          ls -la dist/
+          echo "创建压缩包..."
           cd dist && tar -czf ../${{ matrix.archive }} *
+          cd ..
+          echo "验证压缩包:"
+          ls -la ${{ matrix.archive }}
 
       - name: 打包 (Windows)
         if: matrix.os == 'windows-latest'
         shell: powershell
         run: |
+          Write-Host "创建打包目录..."
           New-Item -ItemType Directory -Force -Path "dist"
+          Write-Host "复制二进制文件..."
           Copy-Item "target/${{ matrix.target }}/release/${{ matrix.binary }}" "dist/"
+          Write-Host "复制配置文件..."
           Copy-Item "config.yaml.example" "dist/config.yaml"
           Copy-Item "README.md" "dist/"
+          Write-Host "打包内容:"
+          Get-ChildItem "dist/" | Format-Table
+          Write-Host "创建压缩包..."
           Compress-Archive -Path "dist/*" -DestinationPath "${{ matrix.archive }}"
+          Write-Host "验证压缩包:"
+          Get-Item "${{ matrix.archive }}" | Format-Table
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.archive }}
           path: ${{ matrix.archive }}
+          retention-days: 7
 
   # 2️⃣ Docker多架构构建
   build-docker:
@@ -157,10 +175,13 @@ jobs:
 
       - name: 准备发布文件
         run: |
-          mkdir release-files
-          find artifacts -name "*.zip" -o -name "*.tar.gz" | while read file; do
-            cp "$file" "release-files/"
-          done
+          mkdir -p release-files
+          echo "查找构建产物..."
+          find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" \) -print
+          echo "复制构建产物..."
+          find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" \) -exec cp {} release-files/ \;
+          echo "发布文件列表:"
+          ls -la release-files/
 
       - name: 创建 GitHub Release
         uses: softprops/action-gh-release@v1
