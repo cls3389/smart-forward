@@ -1,14 +1,23 @@
-# 🚀 GitHub Actions 构建配置指南 (小白版)
+# 🚀 GitHub 完整配置指南
 
 ## 📋 **概述**
 
-本指南将帮助您配置GitHub仓库，让自动构建和发布功能正常工作。
+本指南包含GitHub Actions和Container Registry的完整配置，解决常见的权限问题。
 
-## 🎯 **需要配置的权限**
+## 🚨 **常见错误快速修复**
 
-### **1. GitHub Actions 权限**
-### **2. GitHub Container Registry (GHCR) 权限**  
-### **3. Release 发布权限**
+### 403 Forbidden 错误
+如果遇到以下错误：
+```
+ERROR: failed to push ghcr.io/cls3389/smart-forward:v1.0.0: 
+unexpected status from HEAD request: 403 Forbidden
+```
+
+**快速解决方案**：
+1. GitHub → 您的头像 → **Your profile** → **Packages**
+2. 找到 `smart-forward` 包 (如果存在) → **Package settings** 
+3. 滚动到底部 → **Delete package** → 确认删除
+4. 重新推送tag触发构建：`git tag v1.2.4 && git push origin v1.2.4`
 
 ---
 
