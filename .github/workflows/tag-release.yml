@@ -182,9 +182,6 @@ jobs:
             ghcr.io/${{ github.repository }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          build-args: |
-            HTTP_PROXY=http://127.0.0.1:7897
-            HTTPS_PROXY=http://127.0.0.1:7897
 
   # 创建 GitHub Release
   release:
