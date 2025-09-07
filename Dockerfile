@@ -25,9 +25,8 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs
 # 预编译依赖
 RUN cargo build --release
 
-# 复制源代码和配置文件
+# 复制源代码
 COPY src ./src
-COPY config.yaml.example ./
 
 # 构建应用
 RUN cargo build --release --verbose
@@ -46,9 +45,11 @@ RUN useradd -r -s /bin/false smartforward
 # 设置工作目录
 WORKDIR /app
 
-# 从构建镜像复制二进制文件和配置文件
+# 从构建镜像复制二进制文件
 COPY --from=builder /app/target/release/smart-forward /usr/local/bin/smart-forward
-COPY --from=builder /app/config.yaml.example /app/config.yaml
+
+# 复制配置文件示例
+COPY config.yaml.example /app/config.yaml
 
 # 创建日志目录
 RUN mkdir -p /app/logs && chown smartforward:smartforward /app/logs
