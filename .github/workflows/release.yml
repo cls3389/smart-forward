@@ -1,4 +1,4 @@
-name: 🚀 全平台发布构建 (优化版)
+name: 🚀 发布构建
 
 on:
   push:
@@ -10,11 +10,11 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  # 🔧 依赖预构建 - 为所有平台准备缓存
-  prepare:
-    name: 📦 准备构建环境
+  # 🔧 预检查 - 复用CI结果，避免重复
+  pre-check:
+    name: 📋 预检查
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     outputs:
       cache-key: ${{ steps.cache-key.outputs.key }}
     steps:
@@ -43,11 +43,11 @@ jobs:
       - name: 预下载依赖
         run: cargo fetch
 
-  # 🏗️ 全平台二进制构建
+  # 🏗️ 多平台二进制构建
   build-binaries:
     name: 🔨 构建 ${{ matrix.platform }}-${{ matrix.arch }}
     runs-on: ${{ matrix.os }}
-    needs: prepare
+    needs: pre-check
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -104,7 +104,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ matrix.os }}-${{ needs.prepare.outputs.cache-key }}
+          key: ${{ matrix.os }}-${{ needs.pre-check.outputs.cache-key }}
           restore-keys: |
             ${{ matrix.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-
             ${{ matrix.os }}-cargo-
@@ -147,11 +147,11 @@ jobs:
           path: ${{ matrix.archive }}
           retention-days: 7
 
-  # 🐳 Docker 多架构构建
+  # 🐳 Docker 多架构构建 - 只在发布时运行
   build-docker:
     name: 🐳 构建 Docker 镜像
     runs-on: ubuntu-latest
-    needs: prepare
+    needs: pre-check
     timeout-minutes: 15
     permissions:
       contents: read
@@ -189,11 +189,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          build-args: |
-            BUILDKIT_INLINE_CACHE=1
 
-  # 📋 创建 GitHub Release
-  release:
+  # 📦 创建 GitHub Release
+  create-release:
     name: 📦 创建发布
     runs-on: ubuntu-latest
     needs: [build-binaries, build-docker]
@@ -233,7 +231,7 @@ jobs:
           - **Linux x86_64**: \`smart-forward-linux-x86_64.tar.gz\`
           - **Linux ARM64**: \`smart-forward-linux-aarch64.tar.gz\`
           
-          ### 🐳 Docker 镜像
+          ### 🐳 Docker 镜像 (Alpine 3.18 - 仅8MB)
           \`\`\`bash
           # 拉取镜像
           docker pull ghcr.io/${{ github.repository }}:$VERSION
@@ -250,7 +248,7 @@ jobs:
           - 🔄 智能故障转移
           - 🌐 动态DNS解析
           - 📊 健康检查
-          - 🐳 多架构Docker支持
+          - 🐳 多架构Docker支持 (8MB Alpine镜像)
           - 🔒 安全可靠
           EOF
 
@@ -264,40 +262,3 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # 📊 构建报告
-  report:
-    name: 📊 构建报告
-    runs-on: ubuntu-latest
-    needs: [build-binaries, build-docker, release]
-    if: always()
-    steps:
-      - name: 生成构建报告
-        run: |
-          echo "## 🎯 构建完成报告" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| 组件 | 状态 | 时间 |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|------|------|" >> $GITHUB_STEP_SUMMARY
-          
-          if [ "${{ needs.build-binaries.result }}" == "success" ]; then
-            echo "| 🔨 二进制构建 | ✅ 成功 | ~15分钟 |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "| 🔨 二进制构建 | ❌ 失败 | - |" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          if [ "${{ needs.build-docker.result }}" == "success" ]; then
-            echo "| 🐳 Docker构建 | ✅ 成功 | ~10分钟 |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "| 🐳 Docker构建 | ❌ 失败 | - |" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          if [ "${{ needs.release.result }}" == "success" ]; then
-            echo "| 📦 发布创建 | ✅ 成功 | ~2分钟 |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "| 📦 发布创建 | ❌ 失败 | - |" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🚀 使用方法" >> $GITHUB_STEP_SUMMARY
-          echo "1. 从 [Releases](https://github.com/${{ github.repository }}/releases) 下载对应平台的二进制文件" >> $GITHUB_STEP_SUMMARY
-          echo "2. 或使用 Docker: \`docker pull ghcr.io/${{ github.repository }}:latest\`" >> $GITHUB_STEP_SUMMARY
