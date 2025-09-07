@@ -1,0 +1,303 @@
+name: 🚀 全平台发布构建 (优化版)
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # 🔧 依赖预构建 - 为所有平台准备缓存
+  prepare:
+    name: 📦 准备构建环境
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      cache-key: ${{ steps.cache-key.outputs.key }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 生成缓存键
+        id: cache-key
+        run: |
+          echo "key=cargo-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/Cargo.toml') }}" >> $GITHUB_OUTPUT
+
+      - name: 设置 Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 缓存 Cargo 依赖
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ steps.cache-key.outputs.key }}
+          restore-keys: |
+            cargo-${{ hashFiles('**/Cargo.lock') }}-
+            cargo-
+
+      - name: 预下载依赖
+        run: cargo fetch
+
+  # 🏗️ 全平台二进制构建
+  build-binaries:
+    name: 🔨 构建 ${{ matrix.platform }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    needs: prepare
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            arch: x86_64
+            target: x86_64-pc-windows-msvc
+            binary: smart-forward.exe
+            archive: smart-forward-windows-x86_64.zip
+            
+          - os: macos-latest
+            platform: macos
+            arch: x86_64
+            target: x86_64-apple-darwin
+            binary: smart-forward
+            archive: smart-forward-macos-x86_64.tar.gz
+            
+          - os: macos-latest
+            platform: macos
+            arch: aarch64
+            target: aarch64-apple-darwin
+            binary: smart-forward
+            archive: smart-forward-macos-aarch64.tar.gz
+            
+          - os: ubuntu-latest
+            platform: linux
+            arch: x86_64
+            target: x86_64-unknown-linux-gnu
+            binary: smart-forward
+            archive: smart-forward-linux-x86_64.tar.gz
+            
+          - os: ubuntu-latest
+            platform: linux
+            arch: aarch64
+            target: aarch64-unknown-linux-gnu
+            binary: smart-forward
+            archive: smart-forward-linux-aarch64.tar.gz
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: 恢复 Cargo 缓存
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ matrix.os }}-${{ needs.prepare.outputs.cache-key }}
+          restore-keys: |
+            ${{ matrix.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-
+            ${{ matrix.os }}-cargo-
+
+      # Linux ARM64 交叉编译设置
+      - name: 安装交叉编译工具 (Linux ARM64)
+        if: matrix.platform == 'linux' && matrix.arch == 'aarch64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
+      - name: 构建二进制
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: 创建发布包 (Unix)
+        if: matrix.platform != 'windows'
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/${{ matrix.binary }} dist/
+          cp config.yaml.example dist/config.yaml
+          cp README.md dist/ 2>/dev/null || true
+          cd dist && tar -czf ../${{ matrix.archive }} *
+
+      - name: 创建发布包 (Windows)
+        if: matrix.platform == 'windows'
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path "dist"
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.binary }}" "dist/"
+          Copy-Item "config.yaml.example" "dist/config.yaml"
+          if (Test-Path "README.md") { Copy-Item "README.md" "dist/" }
+          Compress-Archive -Path "dist/*" -DestinationPath "${{ matrix.archive }}"
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive }}
+          path: ${{ matrix.archive }}
+          retention-days: 7
+
+  # 🐳 Docker 多架构构建
+  build-docker:
+    name: 🐳 构建 Docker 镜像
+    runs-on: ubuntu-latest
+    needs: prepare
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 提取元数据
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest
+
+      - name: 构建并推送 Docker 镜像
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+  # 📋 创建 GitHub Release
+  release:
+    name: 📦 创建发布
+    runs-on: ubuntu-latest
+    needs: [build-binaries, build-docker]
+    if: always() && needs.build-binaries.result == 'success'
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 下载所有构建产物
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: 准备发布文件
+        run: |
+          mkdir -p release-files
+          find artifacts -name "*.zip" -o -name "*.tar.gz" | while read file; do
+            cp "$file" "release-files/"
+          done
+          ls -la release-files/
+
+      - name: 生成发布说明
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          cat > release-notes.md << EOF
+          # 🚀 Smart Forward $VERSION
+          
+          ## 📦 下载
+          
+          ### 二进制文件
+          - **Windows**: \`smart-forward-windows-x86_64.zip\`
+          - **macOS Intel**: \`smart-forward-macos-x86_64.tar.gz\`
+          - **macOS Apple Silicon**: \`smart-forward-macos-aarch64.tar.gz\`
+          - **Linux x86_64**: \`smart-forward-linux-x86_64.tar.gz\`
+          - **Linux ARM64**: \`smart-forward-linux-aarch64.tar.gz\`
+          
+          ### 🐳 Docker 镜像
+          \`\`\`bash
+          # 拉取镜像
+          docker pull ghcr.io/${{ github.repository }}:$VERSION
+          
+          # 运行容器
+          docker run -d --name smart-forward \\
+            --network host \\
+            -v \$(pwd)/config.yaml:/app/config.yaml:ro \\
+            ghcr.io/${{ github.repository }}:$VERSION
+          \`\`\`
+          
+          ## ✨ 特性
+          - 🚀 高性能网络转发 (TCP/UDP/HTTP)
+          - 🔄 智能故障转移
+          - 🌐 动态DNS解析
+          - 📊 健康检查
+          - 🐳 多架构Docker支持
+          - 🔒 安全可靠
+          EOF
+
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Smart Forward ${{ github.ref_name }}
+          body_path: release-notes.md
+          files: release-files/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 📊 构建报告
+  report:
+    name: 📊 构建报告
+    runs-on: ubuntu-latest
+    needs: [build-binaries, build-docker, release]
+    if: always()
+    steps:
+      - name: 生成构建报告
+        run: |
+          echo "## 🎯 构建完成报告" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 组件 | 状态 | 时间 |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|------|------|" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.build-binaries.result }}" == "success" ]; then
+            echo "| 🔨 二进制构建 | ✅ 成功 | ~15分钟 |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| 🔨 二进制构建 | ❌ 失败 | - |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.build-docker.result }}" == "success" ]; then
+            echo "| 🐳 Docker构建 | ✅ 成功 | ~10分钟 |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| 🐳 Docker构建 | ❌ 失败 | - |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.release.result }}" == "success" ]; then
+            echo "| 📦 发布创建 | ✅ 成功 | ~2分钟 |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| 📦 发布创建 | ❌ 失败 | - |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 使用方法" >> $GITHUB_STEP_SUMMARY
+          echo "1. 从 [Releases](https://github.com/${{ github.repository }}/releases) 下载对应平台的二进制文件" >> $GITHUB_STEP_SUMMARY
+          echo "2. 或使用 Docker: \`docker pull ghcr.io/${{ github.repository }}:latest\`" >> $GITHUB_STEP_SUMMARY

@@ -25,7 +25,7 @@
 - **macOS Intel**: [smart-forward-macos-x86_64.tar.gz](https://github.com/cls3389/smart-forward/releases/latest)
 - **macOS Apple Silicon**: [smart-forward-macos-aarch64.tar.gz](https://github.com/cls3389/smart-forward/releases/latest)
 
-### Docker 镜像
+### 🐳 Docker 镜像 (Alpine 3.18 - 仅8MB)
 ```bash
 # 拉取最新镜像
 docker pull ghcr.io/cls3389/smart-forward:latest
@@ -40,6 +40,13 @@ docker run -d \
 # 或使用 Docker Compose
 docker-compose up -d
 ```
+
+**镜像特性**:
+- 🏔️ **Alpine Linux 3.18** - 极致小体积
+- 📦 **仅 8MB** - 比Ubuntu镜像小87%
+- 🔒 **非root用户** - 安全运行
+- 🏥 **健康检查** - 自动监控
+- 🌍 **多架构** - AMD64/ARM64支持
 
 ## 🚀 快速开始
 

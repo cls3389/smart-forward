@@ -14,7 +14,7 @@ readme = "README.md"
 [dependencies]
 tokio = { version = "1.0", features = ["rt-multi-thread", "net", "time", "macros", "sync", "signal", "io-util"] }
 serde = { version = "1.0", features = ["derive"] }
-serde_yaml = "0.9"
+serde_yml = "0.0.12"
 log = "0.4"
 env_logger = "0.10"
 anyhow = "1.0"
@@ -36,12 +36,12 @@ name = "smart-forward"
 path = "src/main.rs"
 
 [profile.release]
-# 优化设置
-opt-level = 3
-lto = true
-codegen-units = 1
-panic = "abort"
-strip = true
+# 极致优化设置 - 体积优先
+opt-level = "z"      # 优化体积而非速度
+lto = "fat"          # 全链接时优化
+codegen-units = 1    # 单个代码生成单元
+panic = "abort"      # 减少panic处理代码
+strip = true         # 移除调试符号
 
 [profile.dev]
 # 开发模式优化

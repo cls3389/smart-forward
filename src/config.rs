@@ -46,7 +46,7 @@ pub struct DynamicUpdateConfig {
 impl Config {
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let content = fs::read_to_string(path)?;
-        let mut config: Config = serde_yaml::from_str(&content)?;
+        let mut config: Config = serde_yml::from_str(&content)?;
 
         // 设置默认值
         if config.buffer_size.is_none() {

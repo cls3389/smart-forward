@@ -1,5 +1,5 @@
-# 简单的Docker构建脚本
-Write-Host "🐳 构建 Docker 镜像..." -ForegroundColor Green
+# Alpine 3.18 优化版 Docker 构建脚本 (目标: 8MB)
+Write-Host "🐳 构建 Alpine 优化 Docker 镜像..." -ForegroundColor Green
 
 # 检查Docker
 try {
@@ -22,7 +22,11 @@ if ($LASTEXITCODE -eq 0) {
     docker images smart-forward:latest
     
     Write-Host "`n💡 使用方法:" -ForegroundColor Cyan
-    Write-Host "  docker run -d --name smart-forward -p 443:443 smart-forward:latest" -ForegroundColor White
+    Write-Host "  docker run -d --name smart-forward --network host smart-forward:latest" -ForegroundColor White
+    Write-Host "`n🎯 优化特性:" -ForegroundColor Cyan
+    Write-Host "  - Alpine 3.18 基础镜像" -ForegroundColor White
+    Write-Host "  - 极致编译优化 (opt-level=z)" -ForegroundColor White
+    Write-Host "  - 预期大小: ~8MB" -ForegroundColor White
 } else {
     Write-Host "❌ 构建失败!" -ForegroundColor Red
     exit 1
