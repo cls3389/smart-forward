@@ -25,14 +25,12 @@ jobs:
           fetch-depth: 1  # 只获取最新提交，减少下载时间
 
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           components: rustfmt, clippy
-          override: true
 
       - name: Cache Rust dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -61,13 +59,11 @@ jobs:
           fetch-depth: 1
 
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          override: true
 
       - name: Cache Rust dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -96,14 +92,12 @@ jobs:
           fetch-depth: 1
 
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           target: ${{ matrix.target }}
-          override: true
 
       - name: Cache Rust dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -117,7 +111,7 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: smart-forward-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/smart-forward*
@@ -136,10 +130,8 @@ jobs:
           fetch-depth: 1
 
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          override: true
 
       - name: Install cargo-audit
         run: cargo install cargo-audit
