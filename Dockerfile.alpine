@@ -12,11 +12,23 @@ WORKDIR /app
 
 # 根据目标平台复制对应的二进制文件
 # TARGETPLATFORM 会被Docker Buildx自动设置 (linux/amd64 或 linux/arm64)
+ARG TARGETPLATFORM
 RUN echo "Target platform: ${TARGETPLATFORM}"
-COPY --from=binaries \
-    ${TARGETPLATFORM#linux/}/smart-forward \
-    /usr/local/bin/smart-forward
-RUN chmod +x /usr/local/bin/smart-forward
+
+# 复制对应架构的二进制文件
+COPY --from=binaries amd64/smart-forward /tmp/smart-forward-amd64
+COPY --from=binaries arm64/smart-forward /tmp/smart-forward-arm64
+
+# 根据目标平台选择正确的二进制文件
+RUN if [ "$TARGETPLATFORM" = "linux/amd64" ]; then \
+        cp /tmp/smart-forward-amd64 /usr/local/bin/smart-forward; \
+    elif [ "$TARGETPLATFORM" = "linux/arm64" ]; then \
+        cp /tmp/smart-forward-arm64 /usr/local/bin/smart-forward; \
+    else \
+        echo "Unsupported platform: $TARGETPLATFORM" && exit 1; \
+    fi && \
+    chmod +x /usr/local/bin/smart-forward && \
+    rm /tmp/smart-forward-*
 
 # 创建测试配置
 RUN printf 'logging:\n  level: "info"\n  format: "text"\nnetwork:\n  listen_addr: "0.0.0.0"\nbuffer_size: 8192\nrules:\n  - name: "HTTP_TEST"\n    listen_port: 8080\n    protocol: "tcp"\n    targets:\n      - "httpbin.org:80"\n  - name: "DNS_TEST"\n    listen_port: 8053\n    protocol: "tcp"\n    targets:\n      - "1.1.1.1:53"\n' > /app/config.yaml && \
