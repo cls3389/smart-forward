@@ -1,7 +1,7 @@
-# Rust
+﻿# Rust
 /target/
 **/*.rs.bk
-*.pdb
+Cargo.lock
 
 # IDE
 .vscode/
@@ -17,18 +17,12 @@ Thumbs.db
 *.log
 logs/
 
-# Config (keep example)
-config.yaml
-!config.yaml.example
-
 # Build artifacts
+dist/
 *.exe
 *.dll
 *.so
 *.dylib
-
-# Docker
-.dockerignore
 
 # Temporary files
 *.tmp

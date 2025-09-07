@@ -1,68 +1,36 @@
-name: 自动发布
+name: Release
 
+# 只在发布标签时触发，减少运行频率
 on:
   push:
-    branches: [ main, master ]
     tags:
       - 'v*'
   workflow_dispatch:
     inputs:
-      tag:
-        description: '发布标签'
+      version:
+        description: 'Release version (e.g., v1.0.0)'
         required: true
         type: string
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
-  # 构建所有平台的二进制文件
-  build:
-    name: 构建发布版本
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            platform: windows
-            arch: x86_64
-            target: x86_64-pc-windows-msvc
-            binary_name: smart-forward.exe
-            
-          - os: macos-latest
-            platform: macos
-            arch: x86_64
-            target: x86_64-apple-darwin
-            binary_name: smart-forward
-            
-          - os: macos-latest
-            platform: macos
-            arch: aarch64
-            target: aarch64-apple-darwin
-            binary_name: smart-forward
-            
-          - os: ubuntu-latest
-            platform: linux
-            arch: x86_64
-            target: x86_64-unknown-linux-gnu
-            binary_name: smart-forward
-            
-          - os: ubuntu-latest
-            platform: linux
-            arch: aarch64
-            target: aarch64-unknown-linux-gnu
-            binary_name: smart-forward
-
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - name: 检出代码
+      - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 需要完整历史用于生成 changelog
 
-      - name: 安装 Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
 
-      - name: 缓存 Cargo 依赖
-        uses: actions/cache@v4
+      - name: Cache Rust dependencies
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cargo/registry
@@ -72,161 +40,67 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: 安装交叉编译工具链 (Linux ARM64)
-        if: matrix.platform == 'linux' && matrix.arch == 'aarch64'
+      - name: Build for multiple targets
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-          rustup target add ${{ matrix.target }}
+          # Linux
+          cargo build --release --target x86_64-unknown-linux-gnu
+          
+          # Windows
+          rustup target add x86_64-pc-windows-msvc
+          cargo build --release --target x86_64-pc-windows-msvc
 
-      - name: 设置交叉编译环境 (Linux ARM64)
-        if: matrix.platform == 'linux' && matrix.arch == 'aarch64'
+      - name: Create release archive
         run: |
-          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-          echo "CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++" >> $GITHUB_ENV
-          echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar" >> $GITHUB_ENV
-          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          mkdir -p dist
+          
+          # Linux binary
+          cp target/x86_64-unknown-linux-gnu/release/smart-forward dist/smart-forward-linux-x86_64
+          chmod +x dist/smart-forward-linux-x86_64
+          
+          # Windows binary
+          cp target/x86_64-pc-windows-msvc/release/smart-forward.exe dist/smart-forward-windows-x86_64.exe
+          
+          # Create archives
+          tar -czf dist/smart-forward-linux-x86_64.tar.gz -C dist smart-forward-linux-x86_64
+          zip dist/smart-forward-windows-x86_64.zip dist/smart-forward-windows-x86_64.exe
 
-      - name: 构建项目
-        run: cargo build --release --target ${{ matrix.target }}
-
-      - name: 创建发布目录
-        run: |
-          mkdir -p release/${{ matrix.platform }}-${{ matrix.arch }}
-          cp target/${{ matrix.target }}/release/${{ matrix.binary_name }} release/${{ matrix.platform }}-${{ matrix.arch }}/
-          cp config.yaml.example release/${{ matrix.platform }}-${{ matrix.arch }}/config.yaml
-          cp README.md release/${{ matrix.platform }}-${{ matrix.arch }}/README.md 2>/dev/null || true
-
-      - name: 创建压缩包
-        run: |
-          cd release/${{ matrix.platform }}-${{ matrix.arch }}
-          if [ "${{ matrix.platform }}" = "windows" ]; then
-            powershell Compress-Archive -Path * -DestinationPath ../smart-forward-${{ matrix.platform }}-${{ matrix.arch }}.zip
-          else
-            tar -czf ../smart-forward-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz *
-          fi
-
-      - name: 上传构建产物
-        uses: actions/upload-artifact@v4
-        with:
-          name: smart-forward-${{ matrix.platform }}-${{ matrix.arch }}
-          path: release/smart-forward-${{ matrix.platform }}-${{ matrix.arch }}.*
-          retention-days: 30
-
-  # 创建 GitHub Release
-  release:
-    name: 创建 GitHub Release
-    runs-on: ubuntu-latest
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
-
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
-      - name: 下载所有构建产物
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: 准备发布文件
-        run: |
-          mkdir -p release-files
-          find artifacts -name "*.zip" -o -name "*.tar.gz" | while read file; do
-            cp "$file" release-files/
-          done
-
-      - name: 生成发布说明
-        id: release_notes
-        run: |
-          # 获取版本号
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.tag }}"
-          else
-            VERSION="${GITHUB_REF#refs/tags/}"
-          fi
-          
-          # 生成发布说明
-          cat > release-notes.md << EOF
-          # Smart Forward v${VERSION}
-          
-          ## 🚀 新功能
-          - 智能网络转发器跨平台支持
-          - 支持 Windows、macOS、Linux (x86_64/ARM64)
-          - Docker 多架构镜像支持
-          
-          ## 📦 下载
-          
-          ### Windows
-          - \`smart-forward-windows-x86_64.zip\` - Windows x86_64
-          
-          ### macOS
-          - \`smart-forward-macos-x86_64.tar.gz\` - macOS Intel
-          - \`smart-forward-macos-aarch64.tar.gz\` - macOS Apple Silicon
-          
-          ### Linux
-          - \`smart-forward-linux-x86_64.tar.gz\` - Linux x86_64
-          - \`smart-forward-linux-aarch64.tar.gz\` - Linux ARM64
-          
-          ## 🐳 Docker
-          \`\`\`bash
-          docker pull ghcr.io/cls3389/smart-forward:${VERSION}
-          docker run -d --name smart-forward -p 443:443 ghcr.io/cls3389/smart-forward:${VERSION}
-          \`\`\`
-          
-          ## 📋 使用说明
-          1. 下载对应平台的压缩包
-          2. 解压到目标目录
-          3. 复制 \`config.yaml.example\` 为 \`config.yaml\`
-          4. 根据需求修改配置文件
-          5. 运行程序
-          
-          ## 🔧 配置示例
-          \`\`\`yaml
-          # 基本配置
-          logging:
-            level: "info"
-            format: "json"
-          
-          network:
-            listen_addr: "0.0.0.0"
-          
-          rules:
-            - name: "HTTPS"
-              listen_port: 443
-              protocol: "tcp"
-              targets:
-                - "your-server:443"
-          \`\`\`
-          EOF
-          
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-
-      - name: 创建 GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ env.VERSION }}
-          name: Smart Forward ${{ env.VERSION }}
-          body_path: release-notes.md
-          files: release-files/*
-          draft: false
-          prerelease: ${{ contains(env.VERSION, 'beta') || contains(env.VERSION, 'alpha') || contains(env.VERSION, 'rc') }}
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Release ${{ github.ref_name }}
+          body: |
+            ## Changes in this Release
+            
+            - Bug fixes and improvements
+            - Performance optimizations
+            - Updated dependencies
+            
+            ## Downloads
+            
+            - **Linux x86_64**: [smart-forward-linux-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/smart-forward-linux-x86_64.tar.gz)
+            - **Windows x86_64**: [smart-forward-windows-x86_64.zip](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/smart-forward-windows-x86_64.zip)
+          draft: false
+          prerelease: false
 
-  # 发布到 Cargo
-  publish:
-    name: 发布到 Cargo
-    runs-on: ubuntu-latest
-    needs: release
-    if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref, 'beta') && !contains(github.ref, 'alpha') && !contains(github.ref, 'rc')
+      - name: Upload Release Assets
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./dist/smart-forward-linux-x86_64.tar.gz
+          asset_name: smart-forward-linux-x86_64.tar.gz
+          asset_content_type: application/gzip
 
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
-      - name: 安装 Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: 发布到 Cargo
-        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Upload Windows Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./dist/smart-forward-windows-x86_64.zip
+          asset_name: smart-forward-windows-x86_64.zip
+          asset_content_type: application/zip
