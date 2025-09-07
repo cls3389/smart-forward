@@ -320,7 +320,7 @@ jobs:
             - **Linux x86_64 (musl)**: `smart-forward-linux-x86_64-musl.tar.gz` 🔥
             - **Linux ARM64 (musl)**: `smart-forward-linux-aarch64-musl.tar.gz` 🔥
             
-            ## 🐳 多架构Docker镜像 (Alpine 3.18 + musl - 仅5MB)
+            ## 🐳 多架构Docker镜像 (Alpine 3.18 + musl - 仅15MB)
             支持 `linux/amd64` 和 `linux/arm64` 架构
             
             ```bash

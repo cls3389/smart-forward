@@ -42,7 +42,7 @@ BINARY_TYPE=gnu curl -fsSL https://raw.githubusercontent.com/cls3389/smart-forwa
 ```
 详细说明请查看 [Linux安装指南](docs/linux-installation.md)
 
-### 🐳 Docker 镜像 (Alpine 3.18 + musl - 仅5MB)
+### 🐳 Docker 镜像 (Alpine 3.18 + musl - 仅15MB)
 ```bash
 # 拉取最新镜像 (支持 AMD64/ARM64)
 docker pull ghcr.io/cls3389/smart-forward:latest
@@ -60,8 +60,8 @@ docker-compose up -d
 
 **镜像特性**:
 - 🏔️ **Alpine Linux 3.18** - 极致小体积
-- 📦 **仅 5MB** - musl静态链接优化，比传统镜像小90%
-- 🔒 **非root用户** - 安全运行  
+- 📦 **仅 15MB** - musl静态链接优化，比传统镜像小70%
+- 🔐 **root运行** - 支持特权端口绑定  
 - 🏥 **健康检查** - 自动监控
 - 🌍 **多架构** - AMD64/ARM64原生支持
 - ⚡ **零依赖** - musl静态链接，适用所有环境
