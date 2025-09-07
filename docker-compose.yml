@@ -6,12 +6,8 @@ services:
     container_name: smart-forward-container
     restart: unless-stopped
     
-    # 端口映射 - 根据配置文件调整
-    ports:
-      - "443:443"   # HTTPS 服务
-      - "99:99"     # RDP 服务 (TCP+UDP)
-      - "6690:6690" # 网盘服务
-      - "999:999"   # 分离式RDP (TCP+UDP)
+    # 使用 host 网络模式
+    network_mode: host
     
     # 挂载配置文件
     volumes:
@@ -31,10 +27,6 @@ services:
       retries: 3
       start_period: 10s
     
-    # 网络配置
-    networks:
-      - smart-forward-net
-    
     # 资源限制 (可选)
     deploy:
       resources:
@@ -44,7 +36,3 @@ services:
         reservations:
           memory: 64M
           cpus: '0.1'
-
-networks:
-  smart-forward-net:
-    driver: bridge

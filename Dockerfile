@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     ca-certificates \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # 设置环境变量
@@ -47,8 +48,8 @@ WORKDIR /app
 # 从构建镜像复制二进制文件
 COPY --from=builder /app/target/release/smart-forward /usr/local/bin/smart-forward
 
-# 复制配置文件
-COPY config.yaml /app/config.yaml
+# 复制配置文件示例
+COPY config.yaml.example /app/config.yaml
 
 # 创建日志目录
 RUN mkdir -p /app/logs && chown smartforward:smartforward /app/logs
@@ -56,7 +57,7 @@ RUN mkdir -p /app/logs && chown smartforward:smartforward /app/logs
 # 切换到非 root 用户
 USER smartforward
 
-# 暴露端口 (根据配置文件中的端口)
+# 暴露端口
 EXPOSE 443 99 6690 999
 
 # 设置环境变量

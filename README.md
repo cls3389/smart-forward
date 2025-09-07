@@ -30,15 +30,15 @@
 # 拉取最新镜像
 docker pull ghcr.io/cls3389/smart-forward:latest
 
-# 运行容器
+# 运行容器 (使用 host 网络模式)
 docker run -d \
   --name smart-forward \
-  -p 443:443 \
-  -p 99:99 \
-  -p 6690:6690 \
-  -p 999:999 \
+  --network host \
   -v $(pwd)/config.yaml:/app/config.yaml:ro \
   ghcr.io/cls3389/smart-forward:latest
+
+# 或使用 Docker Compose
+docker-compose up -d
 ```
 
 ## 🚀 快速开始
