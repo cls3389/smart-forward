@@ -1,0 +1,37 @@
+# 多架构Alpine Dockerfile - 使用预编译的musl二进制文件
+ARG TARGETPLATFORM
+FROM alpine:3.18
+
+# 安装最小运行时依赖
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    && adduser -D -s /bin/false smartforward
+
+WORKDIR /app
+
+# 根据目标平台复制对应的二进制文件
+# TARGETPLATFORM 会被Docker Buildx自动设置 (linux/amd64 或 linux/arm64)
+RUN echo "Target platform: ${TARGETPLATFORM}"
+COPY --from=binaries \
+    ${TARGETPLATFORM#linux/}/smart-forward \
+    /usr/local/bin/smart-forward
+RUN chmod +x /usr/local/bin/smart-forward
+
+# 创建测试配置
+RUN printf 'logging:\n  level: "info"\n  format: "text"\nnetwork:\n  listen_addr: "0.0.0.0"\nbuffer_size: 8192\nrules:\n  - name: "HTTP_TEST"\n    listen_port: 8080\n    protocol: "tcp"\n    targets:\n      - "httpbin.org:80"\n  - name: "DNS_TEST"\n    listen_port: 8053\n    protocol: "tcp"\n    targets:\n      - "1.1.1.1:53"\n' > /app/config.yaml && \
+    mkdir -p /app/logs && \
+    chown -R smartforward:smartforward /app
+
+# 使用非特权用户运行
+USER smartforward
+
+EXPOSE 443 99 6690 999 8080 8053
+
+ENV RUST_LOG=info TZ=Asia/Shanghai
+
+# 健康检查：检查进程是否运行
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD pgrep smart-forward > /dev/null || exit 1
+
+CMD ["/usr/local/bin/smart-forward", "--config", "/app/config.yaml"]

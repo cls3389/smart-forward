@@ -1,0 +1,33 @@
+# 直接使用编译好的二进制文件 - 最简单的方案
+FROM ubuntu:22.04
+
+# 安装最小运行时依赖
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    tzdata \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -r -s /bin/false smartforward
+
+WORKDIR /app
+
+# 直接复制已编译好的二进制文件
+COPY smart-forward /usr/local/bin/smart-forward
+RUN chmod +x /usr/local/bin/smart-forward
+
+# 创建测试配置
+RUN printf 'logging:\n  level: "info"\n  format: "text"\nnetwork:\n  listen_addr: "0.0.0.0"\nbuffer_size: 8192\nrules:\n  - name: "HTTP_TEST"\n    listen_port: 8080\n    protocol: "tcp"\n    targets:\n      - "httpbin.org:80"\n' > /app/config.yaml && \
+    mkdir -p /app/logs && \
+    chown -R smartforward:smartforward /app
+
+# 以root运行避免权限问题
+USER root
+
+EXPOSE 8080 443 99 6690 999
+
+ENV RUST_LOG=info TZ=Asia/Shanghai
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD pgrep smart-forward > /dev/null || exit 1
+
+CMD ["/usr/local/bin/smart-forward", "--config", "/app/config.yaml"]
