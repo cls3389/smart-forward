@@ -19,15 +19,22 @@
 
 ## 📦 下载
 
-### 最新版本
+### 最新版本 (v1.3.0)
 - **Windows x86_64**: [smart-forward-windows-x86_64.zip](https://github.com/cls3389/smart-forward/releases/latest)
-- **Linux x86_64**: [smart-forward-linux-x86_64.tar.gz](https://github.com/cls3389/smart-forward/releases/latest)
 - **macOS Intel**: [smart-forward-macos-x86_64.tar.gz](https://github.com/cls3389/smart-forward/releases/latest)
 - **macOS Apple Silicon**: [smart-forward-macos-aarch64.tar.gz](https://github.com/cls3389/smart-forward/releases/latest)
+- **Linux x86_64 (GNU)**: [smart-forward-linux-x86_64-gnu.tar.gz](https://github.com/cls3389/smart-forward/releases/latest)
+- **Linux ARM64 (GNU)**: [smart-forward-linux-aarch64-gnu.tar.gz](https://github.com/cls3389/smart-forward/releases/latest)
+- **Linux x86_64 (musl)**: [smart-forward-linux-x86_64-musl.tar.gz](https://github.com/cls3389/smart-forward/releases/latest) 🔥
+- **Linux ARM64 (musl)**: [smart-forward-linux-aarch64-musl.tar.gz](https://github.com/cls3389/smart-forward/releases/latest) 🔥
 
-### 🐳 Docker 镜像 (Alpine 3.18 - 仅8MB)
+### 🔄 版本选择指南
+- **musl版本** 🔥: 静态链接，零依赖，推荐用于容器和跨发行版部署
+- **GNU版本**: 动态链接，性能稍好，适用于有glibc的传统Linux系统
+
+### 🐳 Docker 镜像 (Alpine 3.18 + musl - 仅5MB)
 ```bash
-# 拉取最新镜像
+# 拉取最新镜像 (支持 AMD64/ARM64)
 docker pull ghcr.io/cls3389/smart-forward:latest
 
 # 运行容器 (使用 host 网络模式)
@@ -43,10 +50,11 @@ docker-compose up -d
 
 **镜像特性**:
 - 🏔️ **Alpine Linux 3.18** - 极致小体积
-- 📦 **仅 8MB** - 比Ubuntu镜像小87%
-- 🔒 **非root用户** - 安全运行
+- 📦 **仅 5MB** - musl静态链接优化，比传统镜像小90%
+- 🔒 **非root用户** - 安全运行  
 - 🏥 **健康检查** - 自动监控
-- 🌍 **多架构** - AMD64/ARM64支持
+- 🌍 **多架构** - AMD64/ARM64原生支持
+- ⚡ **零依赖** - musl静态链接，适用所有环境
 
 ## 🚀 快速开始
 
