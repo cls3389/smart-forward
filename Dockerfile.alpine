@@ -35,8 +35,8 @@ RUN printf 'logging:\n  level: "info"\n  format: "text"\nnetwork:\n  listen_addr
     mkdir -p /app/logs && \
     chown -R smartforward:smartforward /app
 
-# 使用非特权用户运行
-USER smartforward
+# 以root用户运行，允许绑定特权端口
+# USER smartforward
 
 EXPOSE 443 99 6690 999 8080 8053
 
