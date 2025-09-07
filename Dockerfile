@@ -41,8 +41,8 @@ WORKDIR /app
 # 复制二进制文件
 COPY --from=builder /app/target/release/smart-forward /usr/local/bin/smart-forward
 
-# 创建最小配置 (单行优化) - 使用本地回环测试
-RUN printf 'logging:\n  level: "info"\n  format: "text"\nnetwork:\n  listen_addr: "0.0.0.0"\nbuffer_size: 8192\nrules:\n  - name: "TEST"\n    listen_port: 8080\n    protocol: "tcp"\n    targets:\n      - "127.0.0.1:80"\n' > /app/config.yaml && \
+# 创建最小配置 - 使用可靠的外部服务测试
+RUN printf 'logging:\n  level: "info"\n  format: "text"\nnetwork:\n  listen_addr: "0.0.0.0"\nbuffer_size: 8192\nrules:\n  - name: "HTTP_TEST"\n    listen_port: 8080\n    protocol: "tcp"\n    targets:\n      - "httpbin.org:80"\n  - name: "DNS_TEST"\n    listen_port: 9090\n    protocol: "tcp"\n    targets:\n      - "1.1.1.1:53"\n' > /app/config.yaml && \
     mkdir -p /app/logs && \
     chown -R smartforward:smartforward /app
 
