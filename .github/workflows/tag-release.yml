@@ -1,9 +1,11 @@
-name: 标签发布
+name: 发布构建
 
+# 只在推送版本标签时触发，避免频繁构建
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*'  # 只在推送版本标签时触发
+  workflow_dispatch: # 手动触发
 
 env:
   CARGO_TERM_COLOR: always
