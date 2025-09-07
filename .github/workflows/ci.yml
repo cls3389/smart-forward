@@ -25,11 +25,17 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: 检测变更
         id: changes
         run: |
-          if git diff --name-only HEAD~1 | grep -E "(Dockerfile|docker-compose)" > /dev/null; then
+          # 检查是否有Docker相关文件变更
+          if git diff --name-only HEAD~1 2>/dev/null | grep -E "(Dockerfile|docker-compose)" > /dev/null 2>&1; then
+            echo "docker=true" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" == "pull_request" ]; then
+            # PR时总是检查Docker构建
             echo "docker=true" >> $GITHUB_OUTPUT
           else
             echo "docker=false" >> $GITHUB_OUTPUT
@@ -88,12 +94,25 @@ jobs:
   security:
     name: 🛡️ 安全扫描
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: Rust 安全审计
-        uses: rustsec/audit-check@v1.4.1
+      - name: 设置 Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 缓存 cargo-audit
+        uses: actions/cache@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-${{ runner.os }}
+
+      - name: 安装 cargo-audit
+        run: |
+          if ! command -v cargo-audit &> /dev/null; then
+            cargo install cargo-audit
+          fi
+
+      - name: 运行安全审计
+        run: cargo audit
