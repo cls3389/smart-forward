@@ -99,21 +99,35 @@ jobs:
       - name: 构建项目
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: 创建发布目录
+      - name: 创建发布目录 (Unix)
+        if: matrix.platform != 'windows'
         run: |
           mkdir -p release/${{ matrix.platform }}-${{ matrix.arch }}
           cp target/${{ matrix.target }}/release/${{ matrix.binary_name }} release/${{ matrix.platform }}-${{ matrix.arch }}/
           cp config.yaml.example release/${{ matrix.platform }}-${{ matrix.arch }}/config.yaml
           cp README.md release/${{ matrix.platform }}-${{ matrix.arch }}/README.md 2>/dev/null || true
 
-      - name: 创建压缩包
+      - name: 创建发布目录 (Windows)
+        if: matrix.platform == 'windows'
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path "release/${{ matrix.platform }}-${{ matrix.arch }}"
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" "release/${{ matrix.platform }}-${{ matrix.arch }}/"
+          Copy-Item "config.yaml.example" "release/${{ matrix.platform }}-${{ matrix.arch }}/config.yaml"
+          if (Test-Path "README.md") { Copy-Item "README.md" "release/${{ matrix.platform }}-${{ matrix.arch }}/README.md" }
+
+      - name: 创建压缩包 (Unix)
+        if: matrix.platform != 'windows'
         run: |
           cd release/${{ matrix.platform }}-${{ matrix.arch }}
-          if [ "${{ matrix.platform }}" = "windows" ]; then
-            powershell Compress-Archive -Path * -DestinationPath ../${{ matrix.artifact_name }}
-          else
-            tar -czf ../${{ matrix.artifact_name }} *
-          fi
+          tar -czf ../${{ matrix.artifact_name }} *
+
+      - name: 创建压缩包 (Windows)
+        if: matrix.platform == 'windows'
+        shell: powershell
+        run: |
+          Set-Location "release/${{ matrix.platform }}-${{ matrix.arch }}"
+          Compress-Archive -Path * -DestinationPath "../${{ matrix.artifact_name }}"
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
