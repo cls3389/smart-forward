@@ -144,6 +144,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
     
     steps:
       - name: 检出代码
@@ -158,6 +159,17 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+          logout: true
+
+      - name: 设置 Docker 元数据
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest
+            type=sha,prefix={{branch}}-
 
       - name: 构建并推送多架构 Docker 镜像
         uses: docker/build-push-action@v5
@@ -166,10 +178,8 @@ jobs:
           file: Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: |
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
   # 创建 GitHub Release
   release:
