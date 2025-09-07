@@ -101,19 +101,45 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: powershell
         run: |
-          Write-Host "创建打包目录..."
-          New-Item -ItemType Directory -Force -Path "dist"
-          Write-Host "复制二进制文件..."
-          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.binary }}" "dist/"
-          Write-Host "复制配置文件..."
-          Copy-Item "config.yaml.example" "dist/config.yaml"
-          Copy-Item "README.md" "dist/"
-          Write-Host "打包内容:"
+          Write-Host "Creating package directory..."
+          $distPath = "dist"
+          if (-not (Test-Path $distPath)) {
+              New-Item -ItemType Directory -Force -Path $distPath | Out-Null
+              Write-Host "✅ Directory created: $distPath"
+          } else {
+              Write-Host "✅ Directory already exists: $distPath"
+          }
+          
+          Write-Host "Copying binary file..."
+          $binaryPath = "target/${{ matrix.target }}/release/${{ matrix.binary }}"
+          if (-not (Test-Path $binaryPath)) {
+              Write-Host "❌ Error: Binary file not found: $binaryPath"
+              exit 1
+          }
+          Copy-Item $binaryPath "dist/"
+          
+          Write-Host "Copying configuration files..."
+          if (Test-Path "config.yaml.example") {
+              Copy-Item "config.yaml.example" "dist/config.yaml"
+          } else {
+              Write-Host "⚠️ Warning: config.yaml.example not found"
+          }
+          
+          if (Test-Path "README.md") {
+              Copy-Item "README.md" "dist/"
+          } else {
+              Write-Host "⚠️ Warning: README.md not found"
+          }
+          
+          Write-Host "Package contents:"
           Get-ChildItem "dist/" | Format-Table
-          Write-Host "创建压缩包..."
-          Compress-Archive -Path "dist/*" -DestinationPath "${{ matrix.archive }}"
-          Write-Host "验证压缩包:"
-          Get-Item "${{ matrix.archive }}" | Format-Table
+          
+          Write-Host "Creating archive..."
+          $archivePath = "${{ matrix.archive }}"
+          Compress-Archive -Path "dist/*" -DestinationPath $archivePath -Force
+          
+          Write-Host "Archive details:"
+          Get-Item $archivePath | Format-Table
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
