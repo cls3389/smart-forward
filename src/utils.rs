@@ -213,7 +213,7 @@ pub fn get_standard_stats(stats: &ConnectionStats) -> HashMap<String, String> {
             (stats.bytes_sent + stats.bytes_received) as f64 / (1024.0 * 1024.0) / uptime_secs;
         result.insert(
             "avg_throughput_mbps".to_string(),
-            format!("{:.2}", avg_throughput_mbps),
+            format!("{avg_throughput_mbps:.2}"),
         );
         result.insert(
             "connections_per_hour".to_string(),

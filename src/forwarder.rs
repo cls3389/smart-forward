@@ -100,7 +100,7 @@ impl TCPForwarder {
                     }
                     Err(e) => {
                         // 监听错误，记录日志但继续运行
-                        log::warn!("TCP监听器 {} 接受连接失败: {}", name, e);
+                        log::warn!("TCP监听器 {name} 接受连接失败: {e}");
                         // 短暂延迟后继续，避免快速重试
                         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                         continue;
@@ -302,23 +302,22 @@ impl HTTPForwarder {
 
         // 构建HTTPS重定向URL，保持完整路径和参数
         let redirect_url = if path == "/" {
-            format!("https://{}", host)
+            format!("https://{host}")
         } else {
-            format!("https://{}{}", host, path)
+            format!("https://{host}{path}")
         };
 
         // 构建响应
         let response = format!(
             "HTTP/1.1 301 Moved Permanently\r\n\
-             Location: {}\r\n\
+             Location: {redirect_url}\r\n\
              Connection: close\r\n\
              Content-Length: 0\r\n\
-             \r\n",
-            redirect_url
+             \r\n"
         );
 
         stream.write_all(response.as_bytes()).await?;
-        info!("HTTP跳转: {} {} -> {}", method, path, redirect_url);
+        info!("HTTP跳转: {method} {path} -> {redirect_url}");
 
         Ok(())
     }
@@ -358,7 +357,7 @@ impl Forwarder for HTTPForwarder {
             }
         });
 
-        info!("HTTP转发器启动成功: {}", name);
+        info!("HTTP转发器启动成功: {name}");
         Ok(())
     }
 
@@ -780,14 +779,14 @@ impl Forwarder for UnifiedForwarder {
         if let Some(ref tcp) = self.tcp_forwarder {
             let tcp_stats = tcp.get_stats();
             for (k, v) in tcp_stats {
-                stats.insert(format!("tcp_{}", k), v);
+                stats.insert(format!("tcp_{k}"), v);
             }
         }
 
         if let Some(ref udp) = self.udp_forwarder {
             let udp_stats = udp.get_stats();
             for (k, v) in udp_stats {
-                stats.insert(format!("udp_{}", k), v);
+                stats.insert(format!("udp_{k}"), v);
             }
         }
 
@@ -845,7 +844,7 @@ impl SmartForwarder {
         // 如果配置了443但没有配置80，自动启用HTTP跳转
         if has_443 && !has_80 {
             if let Err(e) = self.start_auto_http_redirect().await {
-                warn!("自动HTTP跳转服务启动失败: {}", e);
+                warn!("自动HTTP跳转服务启动失败: {e}");
             } else {
                 success_count += 1;
             }
@@ -863,10 +862,7 @@ impl SmartForwarder {
             }
         }
 
-        info!(
-            "启动完成: {} 个规则可用 (总共 {} 个规则)",
-            success_count, total_count
-        );
+        info!("启动完成: {success_count} 个规则可用 (总共 {total_count} 个规则)");
 
         // 启动动态更新任务
         if !*self.dynamic_update_started.read().await {
@@ -888,7 +884,7 @@ impl SmartForwarder {
         let listen_addr = format!("{}:80", self.config.network.listen_addr);
 
         // 检查80端口是否被占用
-        if let Err(_) = tokio::net::TcpListener::bind(&listen_addr).await {
+        if tokio::net::TcpListener::bind(&listen_addr).await.is_err() {
             warn!("端口80被占用，无法启动自动HTTP跳转服务");
             return Ok(()); // 不返回错误，只是跳过
         }
@@ -976,7 +972,7 @@ impl SmartForwarder {
     pub async fn stop(&mut self) {
         let mut forwarders = self.forwarders.write().await;
         for (name, forwarder) in forwarders.iter_mut() {
-            info!("停止转发器: {}", name);
+            info!("停止转发器: {name}");
             forwarder.stop().await;
         }
         forwarders.clear();

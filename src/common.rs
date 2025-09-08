@@ -51,7 +51,7 @@ impl CommonManager {
         // 2. 初始健康检查阶段：批量并发检查所有目标
         let health_check_result =
             Self::quick_batch_health_check(&self.target_cache, &self.config).await;
-        info!("初始健康检查完成: {}", health_check_result);
+        info!("初始健康检查完成: {health_check_result}");
 
         // 3. 选择最优地址阶段：为每个规则选择最佳目标
         Self::update_rule_targets(&self.rule_infos, &self.target_cache, &self.config).await;
@@ -71,11 +71,11 @@ impl CommonManager {
                 );
                 available_rules += 1;
             } else {
-                warn!("规则 {}: 没有可用的目标地址", rule_name);
+                warn!("规则 {rule_name}: 没有可用的目标地址");
             }
         }
 
-        info!("启动完成: {} 个规则可用", available_rules);
+        info!("启动完成: {available_rules} 个规则可用");
 
         // 5. 启动持续健康检查任务
         self.start_health_check_task().await;
@@ -101,7 +101,7 @@ impl CommonManager {
                     self.target_cache.insert(target_str.clone(), target_info);
                 }
                 Err(e) => {
-                    error!("无法解析目标 {}: {}", target_str, e);
+                    error!("无法解析目标 {target_str}: {e}");
                 }
             }
         }
@@ -150,7 +150,7 @@ impl CommonManager {
 
                 // 只在状态变化时记录日志，减少重复输出
                 if last_status != Some(current_status.clone()) {
-                    info!("健康检查状态: {}", current_status);
+                    info!("健康检查状态: {current_status}");
                     last_status = Some(current_status.clone());
                 }
             }
@@ -183,7 +183,7 @@ impl CommonManager {
                             }
                         }
                         Err(e) => {
-                            warn!("DNS解析失败 {}: {}", target_str, e);
+                            warn!("DNS解析失败 {target_str}: {e}");
                             None
                         }
                     }
@@ -291,7 +291,7 @@ impl CommonManager {
 
                         // 如果之前不健康，现在恢复了
                         if !old_healthy {
-                            status_changes.push(format!("{} 恢复", target_str));
+                            status_changes.push(format!("{target_str} 恢复"));
                         }
                     }
                     Err(_e) => {
@@ -301,7 +301,7 @@ impl CommonManager {
                         // 失败1次就标记为不健康，快速切换
                         if target_info.fail_count >= 1 && old_healthy {
                             target_info.healthy = false;
-                            status_changes.push(format!("{} 异常", target_str));
+                            status_changes.push(format!("{target_str} 异常"));
                         }
 
                         // 统计时仍然按当前健康状态计算
@@ -329,10 +329,7 @@ impl CommonManager {
                 status_changes.join(", ")
             )
         } else {
-            format!(
-                "{} 个地址健康，{} 个地址异常",
-                healthy_addresses, unhealthy_addresses
-            )
+            format!("{healthy_addresses} 个地址健康，{unhealthy_addresses} 个地址异常")
         }
     }
 
@@ -413,7 +410,7 @@ impl CommonManager {
 
                         // 如果之前不健康，现在恢复了
                         if !old_healthy {
-                            status_changes.push(format!("{} 恢复", target_str));
+                            status_changes.push(format!("{target_str} 恢复"));
                         }
                     }
                     Err(_e) => {
@@ -423,7 +420,7 @@ impl CommonManager {
                         // 失败1次就标记为不健康，快速切换
                         if target_info.fail_count >= 1 && old_healthy {
                             target_info.healthy = false;
-                            status_changes.push(format!("{} 异常", target_str));
+                            status_changes.push(format!("{target_str} 异常"));
                         }
 
                         // 统计时仍然按当前健康状态计算
@@ -451,10 +448,7 @@ impl CommonManager {
                 status_changes.join(", ")
             )
         } else {
-            format!(
-                "{} 个地址健康，{} 个地址异常",
-                healthy_addresses, unhealthy_addresses
-            )
+            format!("{healthy_addresses} 个地址健康，{unhealthy_addresses} 个地址异常")
         }
     }
 
@@ -512,7 +506,7 @@ impl CommonManager {
                 }
                 (Some(_old), None) => {
                     // 之前有目标，现在没有了
-                    warn!("规则 {} 不可用", rule_name);
+                    warn!("规则 {rule_name} 不可用");
                     true
                 }
                 (None, None) => {
