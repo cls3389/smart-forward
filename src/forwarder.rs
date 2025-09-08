@@ -841,7 +841,7 @@ impl SmartForwarder {
         // 检查是否需要自动启用HTTP跳转服务
         let has_443 = rules.iter().any(|r| r.listen_port == 443);
         let has_80 = rules.iter().any(|r| r.listen_port == 80);
-        
+
         // 如果配置了443但没有配置80，自动启用HTTP跳转
         if has_443 && !has_80 {
             if let Err(e) = self.start_auto_http_redirect().await {
@@ -886,18 +886,18 @@ impl SmartForwarder {
 
     async fn start_auto_http_redirect(&mut self) -> Result<()> {
         let listen_addr = format!("{}:80", self.config.network.listen_addr);
-        
+
         // 检查80端口是否被占用
         if let Err(_) = tokio::net::TcpListener::bind(&listen_addr).await {
             warn!("端口80被占用，无法启动自动HTTP跳转服务");
             return Ok(()); // 不返回错误，只是跳过
         }
-        
+
         info!("检测到HTTPS配置但无HTTP配置，自动启用HTTP跳转服务");
-        
+
         let mut http_forwarder = HTTPForwarder::new(&listen_addr, "AutoHTTP", 4096);
         http_forwarder.start().await?;
-        
+
         // 将HTTP转发器添加到管理列表中
         self.forwarders
             .write()
