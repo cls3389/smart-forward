@@ -201,10 +201,10 @@ rules:
 ### **验证配置文件**
 ```bash
 # 验证配置语法
-smart-forward --config config.yaml --validate
+smart-forward -c config.yaml --validate
 
 # 测试配置并显示详细信息
-smart-forward --config config.yaml --test
+smart-forward -c config.yaml --test
 ```
 
 ### **常见配置错误**

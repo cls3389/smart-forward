@@ -46,4 +46,4 @@ ENV RUST_LOG=info TZ=Asia/Shanghai
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD pgrep smart-forward > /dev/null || exit 1
 
-CMD ["/usr/local/bin/smart-forward", "--config", "/app/config.yaml"]
+CMD ["/usr/local/bin/smart-forward", "-c", "/app/config.yaml"]

@@ -266,30 +266,59 @@ impl HTTPForwarder {
     }
 
     async fn handle_http_redirect(mut stream: TcpStream) -> Result<()> {
-        let mut buffer = [0; 1024];
+        let mut buffer = vec![0u8; 4096];
         let n = stream.read(&mut buffer).await?;
 
-        if n > 0 {
-            let request = String::from_utf8_lossy(&buffer[..n]);
-            if let Some(host_line) = request
-                .lines()
-                .find(|line| line.to_lowercase().starts_with("host:"))
-            {
-                let host = host_line.split(':').nth(1).unwrap_or("").trim();
-                let https_url = format!("https://{}", host);
+        if n == 0 {
+            return Ok(());
+        }
 
-                let response = format!(
-                    "HTTP/1.1 301 Moved Permanently\r\n\
-                     Location: {}\r\n\
-                     Connection: close\r\n\
-                     Content-Length: 0\r\n\
-                     \r\n",
-                    https_url
-                );
+        let request = String::from_utf8_lossy(&buffer[..n]);
+        let lines: Vec<&str> = request.lines().collect();
 
-                stream.write_all(response.as_bytes()).await?;
+        if lines.is_empty() {
+            return Ok(());
+        }
+
+        // 解析请求行
+        let request_line = lines[0];
+        let parts: Vec<&str> = request_line.split_whitespace().collect();
+
+        if parts.len() < 2 {
+            return Ok(());
+        }
+
+        let method = parts[0];
+        let path = parts[1];
+
+        // 解析Host头
+        let mut host = "localhost";
+        for line in &lines[1..] {
+            if line.to_lowercase().starts_with("host:") {
+                host = line.split(':').nth(1).unwrap_or("localhost").trim();
+                break;
             }
         }
+
+        // 构建HTTPS重定向URL，保持完整路径和参数
+        let redirect_url = if path == "/" {
+            format!("https://{}", host)
+        } else {
+            format!("https://{}{}", host, path)
+        };
+
+        // 构建响应
+        let response = format!(
+            "HTTP/1.1 301 Moved Permanently\r\n\
+             Location: {}\r\n\
+             Connection: close\r\n\
+             Content-Length: 0\r\n\
+             \r\n",
+            redirect_url
+        );
+
+        stream.write_all(response.as_bytes()).await?;
+        info!("HTTP跳转: {} {} -> {}", method, path, redirect_url);
 
         Ok(())
     }
@@ -302,7 +331,7 @@ impl Forwarder for HTTPForwarder {
 
         let listener = match TcpListener::bind(&self.listen_addr).await {
             Ok(listener) => {
-                log::info!("HTTP监听器绑定成功: {}", self.listen_addr);
+                info!("HTTP监听器绑定到: {}", self.listen_addr);
                 listener
             }
             Err(e) => {
@@ -314,6 +343,7 @@ impl Forwarder for HTTPForwarder {
             }
         };
         let running = self.running.clone();
+        let name = self.name.clone();
 
         tokio::spawn(async move {
             while *running.read().await {
@@ -328,6 +358,7 @@ impl Forwarder for HTTPForwarder {
             }
         });
 
+        info!("HTTP转发器启动成功: {}", name);
         Ok(())
     }
 
@@ -669,13 +700,8 @@ impl Forwarder for UnifiedForwarder {
     async fn start(&mut self) -> Result<()> {
         *self.running.write().await = true;
 
-        let protocols = if let Some(ref protocols) = self.rule.protocols {
-            protocols.clone()
-        } else if let Some(ref protocol) = self.rule.protocol {
-            vec![protocol.clone()]
-        } else {
-            vec!["tcp".to_string()]
-        };
+        // 使用规则的 get_protocols() 方法获取协议列表
+        let protocols = self.rule.get_protocols();
 
         for protocol in &protocols {
             match protocol.as_str() {
@@ -812,6 +838,19 @@ impl SmartForwarder {
         let mut success_count = 0;
         let total_count = rules.len();
 
+        // 检查是否需要自动启用HTTP跳转服务
+        let has_443 = rules.iter().any(|r| r.listen_port == 443);
+        let has_80 = rules.iter().any(|r| r.listen_port == 80);
+        
+        // 如果配置了443但没有配置80，自动启用HTTP跳转
+        if has_443 && !has_80 {
+            if let Err(e) = self.start_auto_http_redirect().await {
+                warn!("自动HTTP跳转服务启动失败: {}", e);
+            } else {
+                success_count += 1;
+            }
+        }
+
         for rule in &rules {
             match self.start_forwarder(rule).await {
                 Ok(_) => {
@@ -842,6 +881,30 @@ impl SmartForwarder {
             ));
         }
 
+        Ok(())
+    }
+
+    async fn start_auto_http_redirect(&mut self) -> Result<()> {
+        let listen_addr = format!("{}:80", self.config.network.listen_addr);
+        
+        // 检查80端口是否被占用
+        if let Err(_) = tokio::net::TcpListener::bind(&listen_addr).await {
+            warn!("端口80被占用，无法启动自动HTTP跳转服务");
+            return Ok(()); // 不返回错误，只是跳过
+        }
+        
+        info!("检测到HTTPS配置但无HTTP配置，自动启用HTTP跳转服务");
+        
+        let mut http_forwarder = HTTPForwarder::new(&listen_addr, "AutoHTTP", 4096);
+        http_forwarder.start().await?;
+        
+        // 将HTTP转发器添加到管理列表中
+        self.forwarders
+            .write()
+            .await
+            .insert("AutoHTTP".to_string(), Box::new(http_forwarder));
+            
+        info!("自动HTTP跳转服务启动成功");
         Ok(())
     }
 

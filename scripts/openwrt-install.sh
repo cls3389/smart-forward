@@ -1,6 +1,15 @@
 #!/bin/sh
 # OpenWrt 安装脚本
 # 用于在 MT7981 等 OpenWrt 设备上安装和运行 smart-forward
+# 
+# 使用方法:
+#   ./openwrt-install.sh                     # 默认安装musl版本 (推荐)
+#   BINARY_TYPE=gnu ./openwrt-install.sh     # 安装GNU版本
+#   BINARY_TYPE=musl ./openwrt-install.sh    # 明确指定musl版本
+#
+# 二进制类型说明:
+#   musl: 静态链接，零依赖，兼容所有OpenWrt设备 (推荐)
+#   gnu:  动态链接，性能稍好，需要glibc 2.17+
 
 set -e
 
@@ -11,6 +20,11 @@ APP_URL="https://github.com/cls3389/smart-forward/releases/latest/download"
 CONFIG_DIR="/etc/smart-forward"
 LOG_DIR="/var/log/smart-forward"
 BIN_DIR="/usr/local/bin"
+
+# 二进制类型选择 (可通过环境变量修改)
+# musl: 静态链接，更好兼容性，推荐用于OpenWrt (默认)
+# gnu:  动态链接，需要glibc，性能稍好
+BINARY_TYPE="${BINARY_TYPE:-musl}"
 
 # 颜色输出
 RED='\033[0;31m'
@@ -59,6 +73,17 @@ check_architecture() {
             exit 1
             ;;
     esac
+    
+    # 显示二进制类型信息
+    if [ "$BINARY_TYPE" = "musl" ]; then
+        print_info "二进制类型: musl (静态链接，推荐用于OpenWrt)"
+    elif [ "$BINARY_TYPE" = "gnu" ]; then
+        print_info "二进制类型: GNU (动态链接，需要glibc 2.17+)"
+    else
+        print_error "不支持的二进制类型: $BINARY_TYPE"
+        print_info "支持的类型: musl, gnu"
+        exit 1
+    fi
 }
 
 # 检查依赖
@@ -90,21 +115,26 @@ check_dependencies() {
 download_binary() {
     print_info "下载 $APP_NAME 二进制文件..."
     
-    # 根据架构选择正确的文件名 (匹配GitHub Release命名)
+    # 根据架构和二进制类型选择正确的文件名 (匹配GitHub Release命名)
     local file_suffix
     case "$ARCH" in
         "linux-aarch64")
-            file_suffix="linux-aarch64.tar.gz"
+            file_suffix="linux-aarch64-$BINARY_TYPE.tar.gz"
             ;;
         "linux-x86_64")
-            file_suffix="linux-x86_64.tar.gz"
+            file_suffix="linux-x86_64-$BINARY_TYPE.tar.gz"
             ;;
         "linux-armv7")
-            file_suffix="linux-armv7.tar.gz"
+            # ARM32位暂时不支持，使用ARMv7的musl版本（如果有）
+            print_warn "ARM32位架构暂不提供预编译版本"
+            print_warn "将尝试使用aarch64版本，可能不兼容"
+            file_suffix="linux-aarch64-$BINARY_TYPE.tar.gz"
             ;;
         "linux-mips")
-            print_warn "MIPS架构需要手动编译，使用x86_64版本可能不兼容"
-            file_suffix="linux-x86_64.tar.gz"
+            # MIPS架构不提供预编译版本
+            print_warn "MIPS架构暂不提供预编译版本"
+            print_warn "将尝试使用x86_64版本，可能不兼容"
+            file_suffix="linux-x86_64-$BINARY_TYPE.tar.gz"
             ;;
         *)
             print_error "不支持的架构: $ARCH"
@@ -183,32 +213,33 @@ create_config() {
 # 智能网络转发器配置文件
 # ================================
 
-# 全局配置
-global:
-  log_level: "info"
-  log_file: "/var/log/smart-forward/smart-forward.log"
-  health_check_interval: 30
-  dns_cache_ttl: 300
+# 日志配置
+logging:
+  level: "info"
+  format: "text"
+
+# 网络配置  
+network:
+  listen_addr: "0.0.0.0"
+
+# 缓冲区大小
+buffer_size: 8192
 
 # 转发规则
 rules:
-  - name: "HTTPS转发"
+  - name: "HTTPS转发示例"
     listen_port: 443
     protocol: "tcp"
     targets:
-      - host: "example.com"
-        port: 443
-        priority: 1
-        health_check: true
-  
-  - name: "HTTP转发"
+      - "example.com:443"
+      
+  - name: "HTTP转发示例"
     listen_port: 80
     protocol: "tcp"
     targets:
-      - host: "example.com"
-        port: 80
-        priority: 1
-        health_check: true
+      - "example.com:80"
+      
+  # 添加更多规则...
 EOF
     
     print_info "配置文件创建完成: $CONFIG_DIR/config.yaml"
@@ -230,7 +261,7 @@ CONFIG="/etc/smart-forward/config.yaml"
 
 start_service() {
     procd_open_instance
-    procd_set_param command "$PROG" --config "$CONFIG"
+    procd_set_param command "$PROG" -c "$CONFIG"
     procd_set_param respawn
     procd_set_param stdout 1
     procd_set_param stderr 1

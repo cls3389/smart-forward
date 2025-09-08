@@ -274,7 +274,7 @@ Wants=network.target
 Type=simple
 User=smart-forward
 Group=smart-forward
-ExecStart=/usr/local/bin/smart-forward --config /etc/smart-forward/config.yaml
+ExecStart=/usr/local/bin/smart-forward -c /etc/smart-forward/config.yaml
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 RestartSec=5
@@ -501,10 +501,10 @@ sudo systemctl reload smart-forward
 
 ```bash
 # 验证配置文件语法
-smart-forward --config /path/to/config.yaml --validate
+smart-forward -c /path/to/config.yaml --validate
 
 # 测试配置并显示解析结果
-smart-forward --config /path/to/config.yaml --test
+smart-forward -c /path/to/config.yaml --test
 ```
 
 ---
@@ -598,7 +598,7 @@ sudo ufw status
 ```bash
 # 启用调试日志
 export RUST_LOG=debug
-smart-forward --config config.yaml
+smart-forward -c config.yaml
 
 # 或在配置文件中设置
 logging:

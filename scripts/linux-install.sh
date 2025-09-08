@@ -297,7 +297,7 @@ Wants=network.target
 Type=simple
 User=nobody
 Group=nogroup
-ExecStart=$BIN_DIR/smart-forward --config $CONFIG_DIR/config.yaml
+ExecStart=$BIN_DIR/smart-forward -c $CONFIG_DIR/config.yaml
 ExecReload=/bin/kill -HUP \$MAINPID
 Restart=on-failure
 RestartSec=5
@@ -410,7 +410,7 @@ EOF
 start_service() {
     if [ "$INSTALL_SERVICE" != "true" ]; then
         print_warn "systemd不可用，请手动启动服务:"
-        print_info "$BIN_DIR/smart-forward --config $CONFIG_DIR/config.yaml"
+        print_info "$BIN_DIR/smart-forward -c $CONFIG_DIR/config.yaml"
         return
     fi
     

@@ -344,7 +344,7 @@ sudo sysctl -w net.ipv4.tcp_congestion_control=bbr
 
 # 启动 Smart Forward
 echo "启动游戏代理..."
-smart-forward --config /etc/smart-forward/minecraft.yaml &
+smart-forward -c /etc/smart-forward/minecraft.yaml &
 
 # 等待启动
 sleep 2
@@ -665,7 +665,7 @@ CONFIG_FILE=${1:-"config.yaml"}
 echo "验证配置文件: $CONFIG_FILE"
 
 # 语法检查
-smart-forward --config $CONFIG_FILE --validate
+smart-forward -c $CONFIG_FILE --validate
 if [ $? -eq 0 ]; then
     echo "✅ 配置语法正确"
 else
