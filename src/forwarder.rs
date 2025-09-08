@@ -903,7 +903,7 @@ impl SmartForwarder {
             .write()
             .await
             .insert("AutoHTTP".to_string(), Box::new(http_forwarder));
-            
+
         info!("自动HTTP跳转服务启动成功");
         Ok(())
     }
