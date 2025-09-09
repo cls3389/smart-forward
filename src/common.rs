@@ -538,7 +538,7 @@ impl CommonManager {
                 rule_info.selected_target.as_ref(),
             );
 
-            // 检查是否需要更新目标 - 简化逻辑，智能判断已在选择算法中处理
+            // 检查是否需要更新目标 - 增强逻辑，包括健康状态变化检测
             let should_update = match (&rule_info.selected_target, &new_selected_target) {
                 (None, Some(_)) => {
                     // 之前没有目标，现在有了
@@ -553,8 +553,22 @@ impl CommonManager {
                         );
                         true
                     } else {
-                        // 地址相同，不更新
-                        false
+                        // 地址相同，检查健康状态是否变化
+                        let old_healthy = updated_targets.iter()
+                            .find(|t| t.resolved == old.resolved)
+                            .map(|t| t.healthy)
+                            .unwrap_or(false);
+                        
+                        if old.healthy != old_healthy {
+                            info!(
+                                "规则 {} 目标 {} 健康状态变化: {} -> {}",
+                                rule_name, old.resolved, old.healthy, old_healthy
+                            );
+                            // 健康状态变化也需要更新
+                            true
+                        } else {
+                            false
+                        }
                     }
                 }
                 (Some(_old), None) => {
@@ -609,7 +623,22 @@ fn select_best_target_with_stickiness(
     // 1. 过滤健康目标
     let healthy_targets: Vec<_> = targets.iter().filter(|t| t.healthy).collect();
 
-    // 2. 优先级优先策略：总是选择优先级最高的健康目标
+    // 2. 检查当前目标是否还健康，如果不健康则强制切换
+    if let Some(current) = current_target {
+        // 检查当前目标在最新targets中的健康状态
+        let current_in_targets = targets.iter().find(|t| t.resolved == current.resolved);
+        if let Some(current_updated) = current_in_targets {
+            if !current_updated.healthy {
+                log::warn!(
+                    "当前目标 {} 变为不健康，强制切换到备用地址",
+                    current.resolved
+                );
+                // 当前目标不健康，必须切换到其他健康地址
+            }
+        }
+    }
+
+    // 3. 优先级优先策略：总是选择优先级最高的健康目标
     if !healthy_targets.is_empty() {
         for target in targets {
             if target.healthy {
@@ -617,7 +646,7 @@ fn select_best_target_with_stickiness(
                 if let Some(current) = current_target {
                     if target.resolved != current.resolved {
                         log::info!(
-                            "发现更高优先级健康目标: {} 替换 {}",
+                            "切换到最高优先级健康地址: {} 替换 {}",
                             target.resolved,
                             current.resolved
                         );
@@ -628,13 +657,13 @@ fn select_best_target_with_stickiness(
         }
     }
 
-    // 3. 保守策略：没有健康目标时，如果当前目标存在则保持
+    // 4. 保守策略：没有健康目标时，如果当前目标存在则保持
     if let Some(current) = current_target {
-        log::debug!("无健康目标，保持当前: {}", current.resolved);
+        log::warn!("无健康目标，保持当前不健康地址: {}", current.resolved);
         return Some(current.clone());
     }
 
-    // 4. 初始化场景：选择配置中第一个作为起始目标
+    // 5. 初始化场景：选择配置中第一个作为起始目标
     if let Some(first) = targets.first() {
         log::debug!("初始化选择: {} (健康:{})", first.resolved, first.healthy);
         return Some(first.clone());

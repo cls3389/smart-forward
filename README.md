@@ -1,4 +1,4 @@
-# Smart Forward - 智能网络转发器 v1.4.2
+# Smart Forward - 智能网络转发器 v1.4.3
 
 [![🚀 全平台发布](https://github.com/cls3389/smart-forward/actions/workflows/release.yml/badge.svg)](https://github.com/cls3389/smart-forward/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -101,6 +101,19 @@ smart-forward/
 ```
 
 ## 📈 版本更新
+
+### v1.4.3 (2025-09-09)
+🔧 **增强健康状态检测 - 强化切换逻辑**
+
+✅ **健康状态检测增强**：
+- **当前目标健康状态监控** - 检测当前地址变为不健康时强制切换
+- **健康状态变化日志** - 详细记录地址健康状态变化原因
+- **切换逻辑优化** - 确保地址不健康时立即切换到最优备用地址
+
+🎯 **问题诊断改进**：
+- 增加详细的切换原因日志
+- 健康状态变化实时监控
+- 优化备用地址选择算法
 
 ### v1.4.2 (2025-09-09)
 🚀 **智能切换策略 - 解决"死磕"不健康地址问题**
