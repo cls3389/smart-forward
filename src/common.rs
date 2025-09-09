@@ -212,9 +212,9 @@ impl CommonManager {
             // 记录触发批量更新的原因
             for (domain, reason) in update_reasons {
                 match reason.as_str() {
-                    "changed" => info!("触发原因: {} DNS解析变化", domain),
-                    "retry_failed" => info!("触发原因: {} 重试解析失败的域名", domain),
-                    "newly_failed" => info!("触发原因: {} 新发现解析失败", domain),
+                    "changed" => info!("触发原因: {domain} DNS解析变化"),
+                    "retry_failed" => info!("触发原因: {domain} 重试解析失败的域名"),
+                    "newly_failed" => info!("触发原因: {domain} 新发现解析失败"),
                     _ => {}
                 }
             }
@@ -237,7 +237,7 @@ impl CommonManager {
                                         target_str, target_info.resolved, new_resolved
                                     );
                                 } else if was_failed {
-                                    info!("目标 {} DNS重新解析成功: {}", target_str, new_resolved);
+                                    info!("目标 {target_str} DNS重新解析成功: {new_resolved}");
                                 }
 
                                 updated_info.resolved = new_resolved;
@@ -246,7 +246,7 @@ impl CommonManager {
                                 Some((target_str, updated_info, has_changed || was_failed))
                             }
                             Err(e) => {
-                                warn!("目标 {} DNS重新解析仍然失败: {}", target_str, e);
+                                warn!("目标 {target_str} DNS重新解析仍然失败: {e}");
                                 // 即使解析失败，也要更新last_check时间
                                 let mut failed_info = target_info.clone();
                                 failed_info.last_check = Instant::now();
@@ -277,17 +277,17 @@ impl CommonManager {
                                 Ok(Ok(_)) => {
                                     target_info.healthy = true;
                                     target_info.fail_count = 0;
-                                    info!("目标 {} 重新验证连接成功", target_str);
+                                    info!("目标 {target_str} 重新验证连接成功");
                                 }
                                 Ok(Err(e)) => {
                                     target_info.healthy = false;
                                     target_info.fail_count += 1;
-                                    warn!("目标 {} 重新验证连接失败: {}", target_str, e);
+                                    warn!("目标 {target_str} 重新验证连接失败: {e}");
                                 }
                                 Err(_) => {
                                     target_info.healthy = false;
                                     target_info.fail_count += 1;
-                                    warn!("目标 {} 重新验证连接超时", target_str);
+                                    warn!("目标 {target_str} 重新验证连接超时");
                                 }
                             }
 
