@@ -659,7 +659,7 @@ impl CommonManager {
     }
 }
 
-// 智能目标选择算法 - 保守策略，优先稳定性，集成智能判断
+// 智能目标选择算法 - 优先级优先策略，确保切换到最高优先级健康地址
 fn select_best_target_with_stickiness(
     targets: &[TargetInfo],
     current_target: Option<&TargetInfo>,
@@ -671,39 +671,17 @@ fn select_best_target_with_stickiness(
     // 1. 过滤健康目标
     let healthy_targets: Vec<_> = targets.iter().filter(|t| t.healthy).collect();
 
-    // 2. 核心策略：如果当前目标仍然健康，坚持使用（最高优先级）
-    if let Some(current) = current_target {
-        if current.healthy
-            && healthy_targets
-                .iter()
-                .any(|t| t.resolved == current.resolved)
-        {
-            // 当前目标仍然健康，保持稳定性
-            return Some(current.clone());
-        }
-    }
-
-    // 3. 智能判断：避免从健康目标切换到不健康目标
-    if let Some(current) = current_target {
-        if current.healthy && healthy_targets.is_empty() {
-            // 当前目标健康但没有其他健康目标，保持现状
-            return Some(current.clone());
-        }
-    }
-
-    // 4. 选择最优健康目标：按配置优先级选择
+    // 2. 优先级优先策略：总是选择优先级最高的健康目标
     if !healthy_targets.is_empty() {
         for target in targets {
             if target.healthy {
-                // 如果选择的目标与当前不同，输出选择原因
+                // 找到优先级最高的健康目标
                 if let Some(current) = current_target {
                     if target.resolved != current.resolved {
-                        log::debug!(
-                            "选择新目标: {} (健康:{}) 替换 {} (健康:{})",
+                        log::info!(
+                            "发现更高优先级健康目标: {} 替换 {}",
                             target.resolved,
-                            target.healthy,
-                            current.resolved,
-                            current.healthy
+                            current.resolved
                         );
                     }
                 }
@@ -712,13 +690,13 @@ fn select_best_target_with_stickiness(
         }
     }
 
-    // 5. 保守策略：没有健康目标时保持当前目标，避免无意义切换
+    // 3. 保守策略：没有健康目标时，如果当前目标存在则保持
     if let Some(current) = current_target {
-        log::debug!("保持当前目标: {} (无更好选择)", current.resolved);
+        log::debug!("无健康目标，保持当前: {}", current.resolved);
         return Some(current.clone());
     }
 
-    // 6. 初始化场景：选择配置中第一个作为起始目标
+    // 4. 初始化场景：选择配置中第一个作为起始目标
     if let Some(first) = targets.first() {
         log::debug!("初始化选择: {} (健康:{})", first.resolved, first.healthy);
         return Some(first.clone());

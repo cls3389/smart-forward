@@ -1,4 +1,4 @@
-# Smart Forward - 智能网络转发器 v1.3.7
+# Smart Forward - 智能网络转发器 v1.3.8
 
 [![🚀 全平台发布](https://github.com/cls3389/smart-forward/actions/workflows/release.yml/badge.svg)](https://github.com/cls3389/smart-forward/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
