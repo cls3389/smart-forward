@@ -200,7 +200,9 @@ impl CommonManager {
 
                                 match connection_result {
                                     Ok(Ok(_)) => {
-                                        info!("目标 {target_str} 新地址连接验证成功，可用于规则选择");
+                                        info!(
+                                            "目标 {target_str} 新地址连接验证成功，可用于规则选择"
+                                        );
                                         updated_info.healthy = true;
                                         updated_info.fail_count = 0;
                                     }
@@ -212,7 +214,9 @@ impl CommonManager {
                                         updated_info.fail_count += 1;
                                     }
                                     Err(_) => {
-                                        warn!("目标 {target_str} 新地址连接验证超时，不参与规则选择");
+                                        warn!(
+                                            "目标 {target_str} 新地址连接验证超时，不参与规则选择"
+                                        );
                                         updated_info.healthy = false;
                                         updated_info.fail_count += 1;
                                     }
@@ -537,7 +541,7 @@ impl CommonManager {
                 &updated_targets,
                 rule_info.selected_target.as_ref(),
             );
-            
+
             // 检查是否有健康目标，避免重复的无健康目标警告
             let has_healthy_targets = updated_targets.iter().any(|t| t.healthy);
             if !has_healthy_targets && rule_info.selected_target.is_some() {
@@ -655,7 +659,9 @@ fn select_best_target_with_stickiness(
         if let Some(current_updated) = current_in_targets {
             if !current_updated.healthy {
                 // 检查是否有其他健康目标可切换
-                let has_other_healthy = targets.iter().any(|t| t.healthy && t.resolved != current.resolved);
+                let has_other_healthy = targets
+                    .iter()
+                    .any(|t| t.healthy && t.resolved != current.resolved);
                 if has_other_healthy {
                     log::warn!(
                         "当前目标 {} 变为不健康，强制切换到备用地址",
@@ -663,10 +669,7 @@ fn select_best_target_with_stickiness(
                     );
                 } else {
                     // 没有其他健康目标，只记录一次警告（通过外层时间控制）
-                    log::debug!(
-                        "当前目标 {} 不健康但无备用地址",
-                        current.resolved
-                    );
+                    log::debug!("当前目标 {} 不健康但无备用地址", current.resolved);
                 }
             }
         }
