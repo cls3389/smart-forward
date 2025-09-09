@@ -60,8 +60,8 @@ impl Config {
         // 设置动态更新默认值（优化的内置参数）
         if config.dynamic_update.is_none() {
             config.dynamic_update = Some(DynamicUpdateConfig {
-                check_interval: Some(15),     // 15秒健康检查间隔
-                connection_timeout: Some(10), // 10秒连接超时（实际用于健康检查，不影响切换速度）
+                check_interval: Some(5),      // 5秒健康检查间隔，快速故障检测
+                connection_timeout: Some(2),  // 2秒连接超时，快速故障检测
                 auto_reconnect: Some(true),   // 默认开启自动重连
             });
         }
@@ -113,8 +113,8 @@ impl Config {
     // 获取动态更新配置（优化的内置默认值）
     pub fn get_dynamic_update_config(&self) -> DynamicUpdateConfig {
         self.dynamic_update.clone().unwrap_or(DynamicUpdateConfig {
-            check_interval: Some(15),     // 15秒健康检查间隔
-            connection_timeout: Some(10), // 10秒连接超时（实际用于健康检查，不影响切换速度）
+            check_interval: Some(5),      // 5秒健康检查间隔，快速故障检测
+            connection_timeout: Some(2),  // 2秒连接超时，快速故障检测
             auto_reconnect: Some(true),   // 默认开启自动重连
         })
     }
@@ -122,11 +122,11 @@ impl Config {
 
 impl DynamicUpdateConfig {
     pub fn get_check_interval(&self) -> u64 {
-        self.check_interval.unwrap_or(15) // 缩短到15秒，提高响应速度
+        self.check_interval.unwrap_or(5) // 5秒快速故障检测
     }
 
     pub fn get_connection_timeout(&self) -> u64 {
-        self.connection_timeout.unwrap_or(300)
+        self.connection_timeout.unwrap_or(2) // 2秒快速故障检测
     }
 
     pub fn get_auto_reconnect(&self) -> bool {

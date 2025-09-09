@@ -1,4 +1,4 @@
-# Smart Forward - 智能网络转发器 v1.4.3
+# Smart Forward - 智能网络转发器 v1.4.4
 
 [![🚀 全平台发布](https://github.com/cls3389/smart-forward/actions/workflows/release.yml/badge.svg)](https://github.com/cls3389/smart-forward/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -101,6 +101,21 @@ smart-forward/
 ```
 
 ## 📈 版本更新
+
+### v1.4.4 (2025-09-09)
+⚡ **极速故障检测 - 立即切换优化**
+
+🚀 **快速响应优化**：
+- **健康检查间隔** - 从15秒缩短到 **5秒**，快速发现故障
+- **连接超时时间** - 从5秒缩短到 **2秒**，快速判断连接失败  
+- **总故障检测时间** - 从最多20秒缩短到 **最多7秒** ⚡
+
+🔒 **配置保护**：
+- 添加 `local-config.yaml` 到 `.gitignore`，保护测试配置不被上传
+
+🎯 **用户体验**：
+- `stun-443.4.ipto.top` 失败后，**7秒内立即切换**到备用地址
+- 大幅提升故障转移响应速度
 
 ### v1.4.3 (2025-09-09)
 🔧 **增强健康状态检测 - 强化切换逻辑**

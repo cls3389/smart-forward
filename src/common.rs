@@ -125,10 +125,10 @@ impl CommonManager {
         let config = self.config.clone(); // 传递配置信息
 
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(15)); // 缩短检查间隔到15秒
+            let mut interval = tokio::time::interval(Duration::from_secs(5)); // 加速检查间隔到5秒
             let mut _check_count = 0;
 
-            info!("启动定期健康检查任务，间隔15秒");
+            info!("启动定期健康检查任务，间隔5秒");
 
             let mut last_status = None;
 
@@ -294,8 +294,8 @@ impl CommonManager {
             let task = tokio::spawn(async move {
                 let start = Instant::now();
 
-                // 使用统一的超时时间
-                let timeout_duration = Duration::from_secs(5); // 统一使用5秒超时
+                // 使用统一的超时时间 - 加速故障检测
+                let timeout_duration = Duration::from_secs(2); // 缩短到2秒超时，快速检测故障
 
                 // 根据规则配置决定健康检查协议
                 let result = if protocol_to_check == "udp" {

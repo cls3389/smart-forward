@@ -41,4 +41,5 @@ github-commands.txt
 
 # 配置文件（使用示例文件）
 config.yaml
+local-config.yaml
 !config.yaml.example
