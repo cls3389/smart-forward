@@ -544,7 +544,12 @@ impl CommonManager {
                 let time_since_last_update = rule_info.last_update.elapsed();
                 if time_since_last_update > Duration::from_secs(30) {
                     // 每30秒最多记录一次无健康目标警告
-                    warn!("规则 {} 无健康目标，保持当前地址", rule_name);
+                    if let Some(current_target) = &rule_info.selected_target {
+                        warn!(
+                            "规则 {} 无健康目标，保持当前地址: {}",
+                            rule_name, current_target.resolved
+                        );
+                    }
                 }
             }
 
@@ -649,11 +654,20 @@ fn select_best_target_with_stickiness(
         let current_in_targets = targets.iter().find(|t| t.resolved == current.resolved);
         if let Some(current_updated) = current_in_targets {
             if !current_updated.healthy {
-                log::warn!(
-                    "当前目标 {} 变为不健康，强制切换到备用地址",
-                    current.resolved
-                );
-                // 当前目标不健康，必须切换到其他健康地址
+                // 检查是否有其他健康目标可切换
+                let has_other_healthy = targets.iter().any(|t| t.healthy && t.resolved != current.resolved);
+                if has_other_healthy {
+                    log::warn!(
+                        "当前目标 {} 变为不健康，强制切换到备用地址",
+                        current.resolved
+                    );
+                } else {
+                    // 没有其他健康目标，只记录一次警告（通过外层时间控制）
+                    log::debug!(
+                        "当前目标 {} 不健康但无备用地址",
+                        current.resolved
+                    );
+                }
             }
         }
     }

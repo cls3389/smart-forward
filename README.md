@@ -1,4 +1,4 @@
-# Smart Forward - 智能网络转发器 v1.4.5
+# Smart Forward - 智能网络转发器 v1.4.6
 
 [![🚀 全平台发布](https://github.com/cls3389/smart-forward/actions/workflows/release.yml/badge.svg)](https://github.com/cls3389/smart-forward/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -101,6 +101,19 @@ smart-forward/
 ```
 
 ## 📈 版本更新
+
+### v1.4.6 (2025-09-09)
+🔧 **最终修复单目标规则重复警告**
+
+🚫 **彻底解决**：
+- **单目标规则逻辑** - 当tRDP等规则只有一个目标且不健康时
+- **消除重复警告** - 不再重复输出"强制切换到备用地址"
+- **智能警告判断** - 有备用地址才提示切换，无备用地址时合理保持
+
+🎯 **具体修复**：
+- **tRDP规则**：只有 `ewin10.4.ipto.top` 一个目标时，不健康时显示"无健康目标，保持当前地址"而非"强制切换"
+- **30秒间隔警告**：避免每2秒重复相同警告，30秒最多一次
+- **Debug日志优化**：单目标不健康情况改为debug级别，减少日志噪音
 
 ### v1.4.5 (2025-09-09)
 🔧 **修复健康检查无限循环 - 根治重复日志问题**
