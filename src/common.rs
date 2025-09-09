@@ -142,7 +142,7 @@ impl CommonManager {
                 // 2. 对所有目标进行常规健康检查（补充验证）
                 let current_status = Self::batch_health_check(&target_cache, &config).await;
 
-                // 3. 立即更新规则目标选择（基于最新的健康状态）
+                // 3. 异常后立即切换到可用的最高优先级地址
                 Self::update_rule_targets(&rule_infos, &target_cache, &config).await;
 
                 // 只在状态变化时记录日志，减少重复输出
@@ -192,46 +192,38 @@ impl CommonManager {
                             updated_info.resolved = new_resolved;
                             updated_info.last_check = Instant::now();
                             
-                            // 立即更新缓存
-                            target_cache_clone.insert(target_str.clone(), updated_info.clone());
 
                             if has_changed || was_failed {
-                                // 启动独立的连接验证
-                                let target_str_clone = target_str.clone();
-                                let target_cache_clone = target_cache_clone.clone();
-                                tokio::spawn(async move {
-                                    let connection_result = tokio::time::timeout(
-                                        Duration::from_secs(5),
-                                        crate::utils::test_connection(&new_resolved.to_string()),
-                                    )
-                                    .await;
+                                // 同步连接验证，确保健康了再指定到规则
+                                let connection_result = tokio::time::timeout(
+                                    Duration::from_secs(5),
+                                    crate::utils::test_connection(&new_resolved.to_string()),
+                                )
+                                .await;
 
-                                    let mut final_info = updated_info;
-                                    match connection_result {
-                                        Ok(Ok(_)) => {
-                                            info!("目标 {target_str_clone} 重新验证连接成功");
-                                            final_info.healthy = true;
-                                            final_info.fail_count = 0;
-                                        }
-                                        Ok(Err(e)) => {
-                                            warn!("目标 {target_str_clone} 重新验证连接失败: {e}");
-                                            final_info.healthy = false;
-                                            final_info.fail_count += 1;
-                                        }
-                                        Err(_) => {
-                                            warn!("目标 {target_str_clone} 重新验证连接超时");
-                                            final_info.healthy = false;
-                                            final_info.fail_count += 1;
-                                        }
+                                match connection_result {
+                                    Ok(Ok(_)) => {
+                                        info!("目标 {target_str} 连接验证成功，可用于规则选择");
+                                        updated_info.healthy = true;
+                                        updated_info.fail_count = 0;
                                     }
-                                    
-                                    // 更新最终状态
-                                    target_cache_clone.insert(target_str_clone, final_info);
-                                });
-                                
-                                return Some(true); // 有更新
+                                    Ok(Err(e)) => {
+                                        warn!("目标 {target_str} 连接验证失败: {e}，不参与规则选择");
+                                        updated_info.healthy = false;
+                                        updated_info.fail_count += 1;
+                                    }
+                                    Err(_) => {
+                                        warn!("目标 {target_str} 连接验证超时，不参与规则选择");
+                                        updated_info.healthy = false;
+                                        updated_info.fail_count += 1;
+                                    }
+                                }
                             }
-                            Some(false) // 无更新
+                            
+                            // 验证完成后更新缓存
+                            target_cache_clone.insert(target_str.clone(), updated_info);
+                                
+                            Some(true) // 有更新
                         }
                         Err(e) => {
                             // DNS解析失败，单独标记此域名，不触发批量操作
@@ -261,10 +253,7 @@ impl CommonManager {
 
         // 只有当确实有更新时才更新规则目标选择
         if any_updated {
-            // 短暂延迟确保连接验证完成
-
-            tokio::time::sleep(Duration::from_secs(2)).await;
-
+            // 连接验证已同步完成，只有健康的地址会参与规则选择
             Self::update_rule_targets(rule_infos, target_cache, config).await;
         }
     }
