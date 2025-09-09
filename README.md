@@ -1,4 +1,4 @@
-# Smart Forward - 智能网络转发器 v1.4.0
+# Smart Forward - 智能网络转发器 v1.4.1
 
 [![🚀 全平台发布](https://github.com/cls3389/smart-forward/actions/workflows/release.yml/badge.svg)](https://github.com/cls3389/smart-forward/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -101,6 +101,18 @@ smart-forward/
 ```
 
 ## 📈 版本更新
+
+### v1.4.1 (2025-09-09)
+🔧 **日志修复 - 解决启动统计混乱**
+
+✅ **修复日志Bug**：
+- **修复启动统计错误** - "6个规则可用(总共5个规则)"的逻辑矛盾
+- **区分配置规则和自动服务** - 自动HTTP跳转服务不计入配置规则数量
+- **日志更清晰** - 现在显示"X个规则可用(配置Y个规则+自动HTTP跳转服务)"
+
+🎯 **显示效果**：
+- 之前：`启动完成: 6 个规则可用 (总共 5 个规则)` ❌ 矛盾
+- 现在：`启动完成: 6 个规则可用 (配置 5 个规则 + 自动HTTP跳转服务)` ✅ 清晰
 
 ### v1.4.0 (2025-09-09)
 🎯 **架构重构 - 彻底解决批量触发复杂性**

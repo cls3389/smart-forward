@@ -835,7 +835,6 @@ impl SmartForwarder {
     pub async fn start(&mut self) -> Result<()> {
         let rules = self.config.rules.clone();
         let mut success_count = 0;
-        let total_count = rules.len();
 
         // 检查是否需要自动启用HTTP跳转服务
         let has_443 = rules.iter().any(|r| r.listen_port == 443);
@@ -862,7 +861,14 @@ impl SmartForwarder {
             }
         }
 
-        info!("启动完成: {success_count} 个规则可用 (总共 {total_count} 个规则)");
+        // 计算实际启动的规则数量，区分配置规则和自动服务
+        let configured_rules_started = success_count - if has_443 && !has_80 { 1 } else { 0 };
+        
+        if has_443 && !has_80 && success_count > configured_rules_started {
+            info!("启动完成: {} 个规则可用 (配置 {} 个规则 + 自动HTTP跳转服务)", success_count, configured_rules_started);
+        } else {
+            info!("启动完成: {} 个规则可用", success_count);
+        }
 
         // 启动动态更新任务
         if !*self.dynamic_update_started.read().await {
