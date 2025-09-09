@@ -137,7 +137,7 @@ impl CommonManager {
                 interval.tick().await;
 
                 // 1. 进行DNS检查并立即验证连接（已包含连接验证）
-                Self::update_dns_resolutions(&target_cache).await;
+                Self::update_dns_resolutions(&target_cache, &rule_infos, &config).await;
 
                 // 2. 对所有目标进行常规健康检查（补充验证）
                 let current_status = Self::batch_health_check(&target_cache, &config).await;
@@ -155,7 +155,11 @@ impl CommonManager {
     }
 
     // DNS解析更新 - 智能批量检查，确保所有域名都参与检测和更新
-    async fn update_dns_resolutions(target_cache: &Arc<DashMap<String, TargetInfo>>) {
+    async fn update_dns_resolutions(
+        target_cache: &Arc<DashMap<String, TargetInfo>>,
+        rule_infos: &Arc<RwLock<DashMap<String, RuleInfo>>>,
+        config: &Config,
+    ) {
         let targets: Vec<_> = target_cache
             .iter()
             .map(|entry| (entry.key().clone(), entry.value().clone()))
@@ -309,6 +313,10 @@ impl CommonManager {
             }
 
             info!("批量DNS重新解析和验证完成");
+            
+            // 延迟更新规则目标，确保连接验证有足够时间完成
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            Self::update_rule_targets(rule_infos, target_cache, config).await;
         }
     }
 
@@ -592,7 +600,7 @@ impl CommonManager {
                 rule_info.selected_target.as_ref(),
             );
 
-            // 检查是否需要更新目标
+            // 检查是否需要更新目标 - 增加智能判断
             let should_update = match (&rule_info.selected_target, &new_selected_target) {
                 (None, Some(_)) => {
                     // 之前没有目标，现在有了
@@ -601,11 +609,20 @@ impl CommonManager {
                 (Some(old), Some(new)) => {
                     // 比较新旧目标是否相同
                     if old.resolved != new.resolved {
-                        info!(
-                            "规则 {} 切换: {} -> {}",
-                            rule_name, old.resolved, new.resolved
-                        );
-                        true
+                        // 额外检查：避免从健康目标切换到不健康目标
+                        if old.healthy && !new.healthy {
+                            warn!(
+                                "规则 {} 跳过切换: 当前目标 {} 健康，新目标 {} 不健康",
+                                rule_name, old.resolved, new.resolved
+                            );
+                            false
+                        } else {
+                            info!(
+                                "规则 {} 切换: {} -> {} (旧目标健康:{}, 新目标健康:{})",
+                                rule_name, old.resolved, new.resolved, old.healthy, new.healthy
+                            );
+                            true
+                        }
                     } else {
                         // 地址相同，不更新
                         false
@@ -651,37 +668,45 @@ impl CommonManager {
     }
 }
 
-// 简化目标选择算法 - 优先保持当前健康目标，否则按配置顺序选择
+// 智能目标选择算法 - 保守策略，优先稳定性
 fn select_best_target_with_stickiness(
     targets: &[TargetInfo],
     current_target: Option<&TargetInfo>,
 ) -> Option<TargetInfo> {
+    if targets.is_empty() {
+        return None;
+    }
+
     // 1. 过滤健康目标
     let healthy_targets: Vec<_> = targets.iter().filter(|t| t.healthy).collect();
 
-    if healthy_targets.is_empty() {
-        // 没有健康目标，选择配置中第一个
-        return targets.first().cloned();
-    }
-
-    // 2. 检查当前目标是否仍然健康
+    // 2. 优先策略：如果当前目标仍然健康，坚持使用
     if let Some(current) = current_target {
         if healthy_targets
             .iter()
             .any(|t| t.resolved == current.resolved)
         {
-            // 当前目标仍然健康，保持不变
+            // 当前目标仍然健康，保持稳定性
             return Some(current.clone());
         }
     }
 
-    // 3. 选择配置中最靠前的健康目标
-    for target in targets {
-        if target.healthy {
-            return Some(target.clone());
+    // 3. 如果有健康目标，选择配置中最靠前的
+    if !healthy_targets.is_empty() {
+        for target in targets {
+            if target.healthy {
+                return Some(target.clone());
+            }
         }
     }
 
-    // 4. 无健康目标，返回第一个
+    // 4. 关键修复：没有健康目标时的保守策略
+    if let Some(current) = current_target {
+        // 保持当前目标，避免无意义的切换到另一个也不健康的地址
+        // 这避免了在所有目标都不健康时的频繁切换
+        return Some(current.clone());
+    }
+
+    // 5. 如果没有当前目标，才选择配置中第一个作为初始目标
     targets.first().cloned()
 }
