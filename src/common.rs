@@ -178,53 +178,52 @@ impl CommonManager {
                         Ok(new_resolved) => {
                             let mut updated_info = target_info.clone();
                             let has_changed = new_resolved != target_info.resolved;
-                            let was_failed = !target_info.healthy;
 
                             if has_changed {
                                 info!(
                                     "目标 {} DNS解析变化: {} -> {}",
                                     target_str, target_info.resolved, new_resolved
                                 );
-                            } else if was_failed && new_resolved == target_info.resolved {
-                                info!("目标 {target_str} DNS解析恢复: {new_resolved}");
                             }
 
                             updated_info.resolved = new_resolved;
                             updated_info.last_check = Instant::now();
 
-                            if has_changed || was_failed {
-                                // 同步连接验证，确保健康了再指定到规则
+                            // 只有当地址真正变化时才进行立即连接验证
+                            if has_changed {
+                                // 同步连接验证，确保新地址健康了再指定到规则
                                 let connection_result = tokio::time::timeout(
-                                    Duration::from_secs(5),
+                                    Duration::from_secs(2), // 使用2秒快速超时
                                     crate::utils::test_connection(&new_resolved.to_string()),
                                 )
                                 .await;
 
                                 match connection_result {
                                     Ok(Ok(_)) => {
-                                        info!("目标 {target_str} 连接验证成功，可用于规则选择");
+                                        info!("目标 {target_str} 新地址连接验证成功，可用于规则选择");
                                         updated_info.healthy = true;
                                         updated_info.fail_count = 0;
                                     }
                                     Ok(Err(e)) => {
                                         warn!(
-                                            "目标 {target_str} 连接验证失败: {e}，不参与规则选择"
+                                            "目标 {target_str} 新地址连接验证失败: {e}，不参与规则选择"
                                         );
                                         updated_info.healthy = false;
                                         updated_info.fail_count += 1;
                                     }
                                     Err(_) => {
-                                        warn!("目标 {target_str} 连接验证超时，不参与规则选择");
+                                        warn!("目标 {target_str} 新地址连接验证超时，不参与规则选择");
                                         updated_info.healthy = false;
                                         updated_info.fail_count += 1;
                                     }
                                 }
                             }
+                            // 对于地址未变化的情况，保持原有健康状态，通过常规健康检查更新
 
                             // 验证完成后更新缓存
                             target_cache_clone.insert(target_str.clone(), updated_info);
 
-                            Some(true) // 有更新
+                            Some(has_changed) // 只有地址变化时才标记为有更新
                         }
                         Err(e) => {
                             // DNS解析失败，单独标记此域名，不触发批量操作
@@ -538,6 +537,16 @@ impl CommonManager {
                 &updated_targets,
                 rule_info.selected_target.as_ref(),
             );
+            
+            // 检查是否有健康目标，避免重复的无健康目标警告
+            let has_healthy_targets = updated_targets.iter().any(|t| t.healthy);
+            if !has_healthy_targets && rule_info.selected_target.is_some() {
+                let time_since_last_update = rule_info.last_update.elapsed();
+                if time_since_last_update > Duration::from_secs(30) {
+                    // 每30秒最多记录一次无健康目标警告
+                    warn!("规则 {} 无健康目标，保持当前地址", rule_name);
+                }
+            }
 
             // 检查是否需要更新目标 - 增强逻辑，包括健康状态变化检测
             let should_update = match (&rule_info.selected_target, &new_selected_target) {
@@ -562,10 +571,19 @@ impl CommonManager {
                             .unwrap_or(false);
 
                         if old.healthy != old_healthy {
-                            info!(
-                                "规则 {} 目标 {} 健康状态变化: {} -> {}",
-                                rule_name, old.resolved, old.healthy, old_healthy
-                            );
+                            // 避免重复记录相同的健康状态变化（检查时间间隔）
+                            let time_since_last_update = rule_info.last_update.elapsed();
+                            if time_since_last_update > Duration::from_secs(10) || old_healthy {
+                                // 只有间隔超过10秒或状态恢复为健康时才记录日志
+                                if old_healthy {
+                                    info!("规则 {} 目标 {} 恢复健康", rule_name, old.resolved);
+                                } else {
+                                    info!(
+                                        "规则 {} 目标 {} 健康状态变化: {} -> {}",
+                                        rule_name, old.resolved, old.healthy, old_healthy
+                                    );
+                                }
+                            }
                             // 健康状态变化也需要更新
                             true
                         } else {
@@ -661,7 +679,7 @@ fn select_best_target_with_stickiness(
 
     // 4. 保守策略：没有健康目标时，如果当前目标存在则保持
     if let Some(current) = current_target {
-        log::warn!("无健康目标，保持当前不健康地址: {}", current.resolved);
+        // 移除频繁的警告日志，由调用方决定是否记录
         return Some(current.clone());
     }
 

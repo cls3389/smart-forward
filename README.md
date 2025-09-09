@@ -1,4 +1,4 @@
-# Smart Forward - 智能网络转发器 v1.4.4
+# Smart Forward - 智能网络转发器 v1.4.5
 
 [![🚀 全平台发布](https://github.com/cls3389/smart-forward/actions/workflows/release.yml/badge.svg)](https://github.com/cls3389/smart-forward/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -101,6 +101,24 @@ smart-forward/
 ```
 
 ## 📈 版本更新
+
+### v1.4.5 (2025-09-09)
+🔧 **修复健康检查无限循环 - 根治重复日志问题**
+
+🚫 **问题修复**：
+- **DNS解析循环** - 修复DNS解析成功≠服务恢复的逻辑错误
+- **重复日志清理** - 大幅减少重复的健康状态变化日志
+- **智能日志控制** - 只在状态真正变化或恢复健康时记录
+
+⚡ **性能优化**：
+- **减少不必要的连接验证** - 只在地址真正变化时才立即验证
+- **时间控制的日志** - 避免每2秒重复相同的警告信息
+- **优化规则更新逻辑** - 减少无效的规则选择计算
+
+🎯 **用户体验**：
+- **tRDP规则** 不再出现无限循环的健康状态切换
+- **日志清洁度** 大幅提升，专注于真正有意义的状态变化
+- **系统稳定性** 增强，避免不必要的资源消耗
 
 ### v1.4.4 (2025-09-09)
 ⚡ **极速故障检测 - 立即切换优化**
