@@ -170,8 +170,8 @@ impl CommonManager {
         let mut dns_check_tasks = Vec::new();
 
         for (target_str, target_info) in targets.iter() {
-            // 只对域名进行DNS解析检查，跳过IP地址
-            if target_str.parse::<std::net::IpAddr>().is_err() && target_str.contains('.') {
+            // 只对域名进行DNS解析检查，跳过IP:PORT格式
+            if target_str.parse::<std::net::SocketAddr>().is_err() && target_str.contains('.') {
                 let target_str_clone = target_str.clone();
                 let target_info_clone = target_info.clone();
                 let task = tokio::spawn(async move {
@@ -186,12 +186,18 @@ impl CommonManager {
                             }
                         }
                         Err(_) => {
-                            // DNS解析失败，如果目标当前是不健康的，也需要批量更新来重试
-                            if !target_info_clone.healthy {
+                            // DNS解析失败，添加重试间隔避免无限循环
+                            let time_since_last_check = target_info_clone.last_check.elapsed();
+                            
+                            if !target_info_clone.healthy && time_since_last_check.as_secs() >= 60 {
+                                // 不健康且距离上次检查超过60秒，才重试
                                 Some((target_str_clone, "retry_failed".to_string()))
-                            } else {
-                                // 当前健康但本次解析失败，可能需要重试
+                            } else if target_info_clone.healthy {
+                                // 当前健康但本次解析失败，标记为新失败
                                 Some((target_str_clone, "newly_failed".to_string()))
+                            } else {
+                                // 不健康但间隔不够，跳过重试
+                                None
                             }
                         }
                     }
@@ -226,8 +232,8 @@ impl CommonManager {
             // 第二阶段：对所有域名进行重新解析（包括之前失败的）
             let mut batch_resolve_tasks = Vec::new();
             for (target_str, target_info) in targets {
-                // 只处理域名，跳过IP地址
-                if target_str.parse::<std::net::IpAddr>().is_err() && target_str.contains('.') {
+                // 只处理域名，跳过IP:PORT格式
+                if target_str.parse::<std::net::SocketAddr>().is_err() && target_str.contains('.') {
                     let task = tokio::spawn(async move {
                         match resolve_target(&target_str).await {
                             Ok(new_resolved) => {
