@@ -1,4 +1,4 @@
-# Smart Forward - 智能网络转发器 v1.1.0
+# Smart Forward - 智能网络转发器 v1.3.6
 
 [![🚀 全平台发布](https://github.com/cls3389/smart-forward/actions/workflows/release.yml/badge.svg)](https://github.com/cls3389/smart-forward/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -102,7 +102,7 @@ smart-forward/
 
 ## 📈 版本更新
 
-### v1.1.0 (2025-01-09)
+### v1.3.6 (2025-01-09)
 🎯 **核心优化 + 项目结构整理**
 
 ✅ **核心功能优化**：
