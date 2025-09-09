@@ -164,7 +164,7 @@ impl CommonManager {
         // 第一阶段：检测是否有任何DNS变化或解析失败的域名需要重试
         let mut needs_batch_update = false;
         let mut dns_check_tasks = Vec::new();
-        
+
         for (target_str, target_info) in targets.iter() {
             // 只对域名进行DNS解析检查，跳过IP地址
             if target_str.parse::<std::net::IpAddr>().is_err() && target_str.contains('.') {
@@ -208,7 +208,7 @@ impl CommonManager {
         // 如果需要批量更新（有变化或需要重试失败的域名）
         if needs_batch_update {
             info!("检测到DNS变化或失败域名，触发所有域名批量重新解析和验证");
-            
+
             // 记录触发批量更新的原因
             for (domain, reason) in update_reasons {
                 match reason.as_str() {
@@ -218,7 +218,7 @@ impl CommonManager {
                     _ => {}
                 }
             }
-            
+
             // 第二阶段：对所有域名进行重新解析（包括之前失败的）
             let mut batch_resolve_tasks = Vec::new();
             for (target_str, target_info) in targets {
@@ -230,7 +230,7 @@ impl CommonManager {
                                 let mut updated_info = target_info.clone();
                                 let has_changed = new_resolved != target_info.resolved;
                                 let was_failed = !target_info.healthy;
-                                
+
                                 if has_changed {
                                     info!(
                                         "目标 {} DNS解析变化: {} -> {}",
@@ -239,10 +239,10 @@ impl CommonManager {
                                 } else if was_failed {
                                     info!("目标 {} DNS重新解析成功: {}", target_str, new_resolved);
                                 }
-                                
+
                                 updated_info.resolved = new_resolved;
                                 updated_info.last_check = Instant::now();
-                                
+
                                 Some((target_str, updated_info, has_changed || was_failed))
                             }
                             Err(e) => {
@@ -269,8 +269,9 @@ impl CommonManager {
                         let verification_task = tokio::spawn(async move {
                             let connection_result = tokio::time::timeout(
                                 Duration::from_secs(5),
-                                crate::utils::test_connection(&target_str)
-                            ).await;
+                                crate::utils::test_connection(&target_str),
+                            )
+                            .await;
 
                             match connection_result {
                                 Ok(Ok(_)) => {
@@ -306,7 +307,7 @@ impl CommonManager {
                     target_cache.insert(target_str, target_info);
                 }
             }
-            
+
             info!("批量DNS重新解析和验证完成");
         }
     }
