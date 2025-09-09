@@ -1,4 +1,4 @@
-# Smart Forward - 智能网络转发器
+# Smart Forward - 智能网络转发器 v1.1.0
 
 [![🚀 全平台发布](https://github.com/cls3389/smart-forward/actions/workflows/release.yml/badge.svg)](https://github.com/cls3389/smart-forward/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -76,16 +76,52 @@ rules:
 smart-forward.exe
 
 # Docker Compose
-docker-compose up -d
+cd docker && docker-compose up -d
 ```
 
 ## 📚 完整文档
 
-- 📦 **[安装指南](INSTALLATION.md)** - 所有平台的详细安装说明
-- ⚙️ **[配置指南](CONFIGURATION.md)** - 完整的配置选项和示例
-- 📝 **[使用示例](EXAMPLES.md)** - 实际场景配置案例
-- 🚀 **[部署指南](DEPLOYMENT.md)** - 生产环境部署最佳实践
-- 🔧 **[故障排除](TROUBLESHOOTING.md)** - 常见问题解决方案
+- 📦 **[安装指南](docs/INSTALLATION.md)** - 所有平台的详细安装说明
+- ⚙️ **[配置指南](docs/CONFIGURATION.md)** - 完整的配置选项和示例
+- 📝 **[使用示例](docs/EXAMPLES.md)** - 实际场景配置案例
+- 🚀 **[部署指南](docs/DEPLOYMENT.md)** - 生产环境部署最佳实践
+- 🔧 **[故障排除](docs/TROUBLESHOOTING.md)** - 常见问题解决方案
+
+## 📁 项目结构
+
+```
+smart-forward/
+├── 📁 src/              # 🦀 Rust 源代码
+├── 📁 docs/             # 📚 详细文档
+├── 📁 docker/           # 🐳 Docker 配置文件
+├── 📁 scripts/          # 🔧 构建和安装脚本
+├── 📄 README.md         # 📖 项目说明
+├── ⚙️ config.yaml       # 🎯 主配置文件
+└── 🏗️ Cargo.toml        # 📦 Rust 项目配置
+```
+
+## 📈 版本更新
+
+### v1.1.0 (2025-01-09)
+🎯 **核心优化 + 项目结构整理**
+
+✅ **核心功能优化**：
+- **DNS切换逻辑优化** - DNS变化时立即验证连接
+- **批量DNS更新机制** - 一个域名变化触发全量更新
+- **健康检查时序优化** - 移除不必要的延迟
+- **IP:PORT处理优化** - 直接IP地址跳过DNS解析
+- **日志重复问题修复** - 清理重复的初始化日志
+
+📁 **项目结构优化**：
+- 创建 `docs/` 目录统一管理文档
+- 创建 `docker/` 目录存放Docker配置
+- 创建 `scripts/` 目录管理构建脚本
+- 文件大小优化：3.3MB → 1.9MB (减少40%+)
+
+🛠️ **开发体验改进**：
+- 通过GitHub CI格式检查
+- 代码结构更简洁，可维护性更好
+- 文档组织更清晰，查找更方便
 
 ## 🎯 特色功能
 

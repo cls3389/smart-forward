@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  smart-forward:
+    image: ghcr.io/cls3389/smart-forward:latest
+    container_name: smart-forward
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - "./config.yaml:/app/config.yaml:ro"
+    command: ["/app/smart-forward", "-c", "/app/config.yaml"]
