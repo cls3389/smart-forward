@@ -1,4 +1,4 @@
-# Smart Forward - 智能网络转发器 v1.3.9
+# Smart Forward - 智能网络转发器 v1.4.0
 
 [![🚀 全平台发布](https://github.com/cls3389/smart-forward/actions/workflows/release.yml/badge.svg)](https://github.com/cls3389/smart-forward/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -101,6 +101,26 @@ smart-forward/
 ```
 
 ## 📈 版本更新
+
+### v1.4.0 (2025-09-09)
+🎯 **架构重构 - 彻底解决批量触发复杂性**
+
+✅ **核心架构优化**：
+- **取消批量DNS触发机制** - 按用户建议，各域名独立解析处理
+- **移除60秒重试间隔debuff** - 不再有性能降级
+- **简化DNS解析逻辑** - 每个域名独立失败处理，不影响其他域名
+- **升级thiserror依赖** - 从1.0更新到2.0.16，清理技术债务
+
+🚀 **性能和稳定性提升**：
+- 彻底消除无限循环问题
+- 去除复杂的批量触发条件判断
+- DNS解析性能优化：各域名并行独立处理
+- 日志更清晰：只记录真正有更新的域名
+
+🔧 **逻辑简化**：
+- 域名解析失败时单独标记，不触发全局重新解析
+- IP:PORT格式跳过DNS解析（v1.3.9已修复）
+- 优先级选择算法保持高效（v1.3.8已优化）
 
 ### v1.3.9 (2025-09-09)
 🚨 **关键Bug修复 - 无限循环和错误解析**
