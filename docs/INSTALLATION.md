@@ -43,7 +43,7 @@ INSTALL_DIR=/opt/smart-forward curl -fsSL https://raw.githubusercontent.com/cls3
 
 ```bash
 # 选择适合的版本下载
-VERSION="v1.3.6"
+VERSION="v1.3.7"
 
 # musl 版本 (推荐 - 静态链接，零依赖)
 wget https://github.com/cls3389/smart-forward/releases/download/${VERSION}/smart-forward-linux-x86_64-musl.tar.gz

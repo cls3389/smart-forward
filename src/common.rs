@@ -313,7 +313,7 @@ impl CommonManager {
             }
 
             info!("批量DNS重新解析和验证完成");
-            
+
             // 延迟更新规则目标，确保连接验证有足够时间完成
             tokio::time::sleep(Duration::from_secs(2)).await;
             Self::update_rule_targets(rule_infos, target_cache, config).await;
@@ -673,7 +673,11 @@ fn select_best_target_with_stickiness(
 
     // 2. 核心策略：如果当前目标仍然健康，坚持使用（最高优先级）
     if let Some(current) = current_target {
-        if current.healthy && healthy_targets.iter().any(|t| t.resolved == current.resolved) {
+        if current.healthy
+            && healthy_targets
+                .iter()
+                .any(|t| t.resolved == current.resolved)
+        {
             // 当前目标仍然健康，保持稳定性
             return Some(current.clone());
         }
@@ -696,8 +700,10 @@ fn select_best_target_with_stickiness(
                     if target.resolved != current.resolved {
                         log::debug!(
                             "选择新目标: {} (健康:{}) 替换 {} (健康:{})",
-                            target.resolved, target.healthy,
-                            current.resolved, current.healthy
+                            target.resolved,
+                            target.healthy,
+                            current.resolved,
+                            current.healthy
                         );
                     }
                 }
@@ -708,19 +714,13 @@ fn select_best_target_with_stickiness(
 
     // 5. 保守策略：没有健康目标时保持当前目标，避免无意义切换
     if let Some(current) = current_target {
-        log::debug!(
-            "保持当前目标: {} (无更好选择)",
-            current.resolved
-        );
+        log::debug!("保持当前目标: {} (无更好选择)", current.resolved);
         return Some(current.clone());
     }
 
     // 6. 初始化场景：选择配置中第一个作为起始目标
     if let Some(first) = targets.first() {
-        log::debug!(
-            "初始化选择: {} (健康:{})",
-            first.resolved, first.healthy
-        );
+        log::debug!("初始化选择: {} (健康:{})", first.resolved, first.healthy);
         return Some(first.clone());
     }
 
