@@ -863,9 +863,12 @@ impl SmartForwarder {
 
         // 计算实际启动的规则数量，区分配置规则和自动服务
         let configured_rules_started = success_count - if has_443 && !has_80 { 1 } else { 0 };
-        
+
         if has_443 && !has_80 && success_count > configured_rules_started {
-            info!("启动完成: {} 个规则可用 (配置 {} 个规则 + 自动HTTP跳转服务)", success_count, configured_rules_started);
+            info!(
+                "启动完成: {} 个规则可用 (配置 {} 个规则 + 自动HTTP跳转服务)",
+                success_count, configured_rules_started
+            );
         } else {
             info!("启动完成: {} 个规则可用", success_count);
         }

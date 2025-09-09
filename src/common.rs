@@ -191,7 +191,6 @@ impl CommonManager {
 
                             updated_info.resolved = new_resolved;
                             updated_info.last_check = Instant::now();
-                            
 
                             if has_changed || was_failed {
                                 // 同步连接验证，确保健康了再指定到规则
@@ -208,7 +207,9 @@ impl CommonManager {
                                         updated_info.fail_count = 0;
                                     }
                                     Ok(Err(e)) => {
-                                        warn!("目标 {target_str} 连接验证失败: {e}，不参与规则选择");
+                                        warn!(
+                                            "目标 {target_str} 连接验证失败: {e}，不参与规则选择"
+                                        );
                                         updated_info.healthy = false;
                                         updated_info.fail_count += 1;
                                     }
@@ -219,10 +220,10 @@ impl CommonManager {
                                     }
                                 }
                             }
-                            
+
                             // 验证完成后更新缓存
                             target_cache_clone.insert(target_str.clone(), updated_info);
-                                
+
                             Some(true) // 有更新
                         }
                         Err(e) => {
@@ -231,7 +232,7 @@ impl CommonManager {
                             failed_info.last_check = Instant::now();
                             failed_info.healthy = false;
                             failed_info.fail_count += 1;
-                            
+
                             warn!("目标 {target_str} DNS解析失败: {e}");
                             target_cache_clone.insert(target_str, failed_info);
                             Some(false)
@@ -554,11 +555,12 @@ impl CommonManager {
                         true
                     } else {
                         // 地址相同，检查健康状态是否变化
-                        let old_healthy = updated_targets.iter()
+                        let old_healthy = updated_targets
+                            .iter()
                             .find(|t| t.resolved == old.resolved)
                             .map(|t| t.healthy)
                             .unwrap_or(false);
-                        
+
                         if old.healthy != old_healthy {
                             info!(
                                 "规则 {} 目标 {} 健康状态变化: {} -> {}",
