@@ -136,16 +136,13 @@ impl CommonManager {
                 // 等待检查间隔
                 interval.tick().await;
 
-                // 1. 进行DNS检查，更新所有目标地址的解析结果
+                // 1. 进行DNS检查并立即验证连接（已包含连接验证）
                 Self::update_dns_resolutions(&target_cache).await;
 
-                // 2. 等待5秒后进行健康检查，避免与DNS检查冲突
-                tokio::time::sleep(Duration::from_secs(5)).await;
-
-                // 3. 基于最新的DNS解析结果进行健康检查
+                // 2. 对所有目标进行常规健康检查（补充验证）
                 let current_status = Self::batch_health_check(&target_cache, &config).await;
 
-                // 4. 更新规则目标选择
+                // 3. 立即更新规则目标选择（基于最新的健康状态）
                 Self::update_rule_targets(&rule_infos, &target_cache, &config).await;
 
                 // 只在状态变化时记录日志，减少重复输出
@@ -157,51 +154,160 @@ impl CommonManager {
         });
     }
 
-    // DNS解析更新 - 定期检查DNS变化并更新target_cache
+    // DNS解析更新 - 智能批量检查，确保所有域名都参与检测和更新
     async fn update_dns_resolutions(target_cache: &Arc<DashMap<String, TargetInfo>>) {
         let targets: Vec<_> = target_cache
             .iter()
             .map(|entry| (entry.key().clone(), entry.value().clone()))
             .collect();
 
-        // 并发解析所有域名目标
-        let mut dns_tasks = Vec::new();
-        for (target_str, target_info) in targets {
-            // 只对域名进行DNS解析，跳过IP地址
+        // 第一阶段：检测是否有任何DNS变化或解析失败的域名需要重试
+        let mut needs_batch_update = false;
+        let mut dns_check_tasks = Vec::new();
+        
+        for (target_str, target_info) in targets.iter() {
+            // 只对域名进行DNS解析检查，跳过IP地址
             if target_str.parse::<std::net::IpAddr>().is_err() && target_str.contains('.') {
+                let target_str_clone = target_str.clone();
+                let target_info_clone = target_info.clone();
                 let task = tokio::spawn(async move {
-                    match resolve_target(&target_str).await {
+                    match resolve_target(&target_str_clone).await {
                         Ok(new_resolved) => {
-                            if new_resolved != target_info.resolved {
-                                info!(
-                                    "目标 {} DNS解析变化: {} -> {}",
-                                    target_str, target_info.resolved, new_resolved
-                                );
-                                Some((target_str, target_info, new_resolved))
+                            if new_resolved != target_info_clone.resolved {
+                                // DNS解析结果变化
+                                Some((target_str_clone, "changed".to_string()))
                             } else {
-                                None // DNS没有变化
+                                // DNS解析结果未变化
+                                None
                             }
                         }
-                        Err(e) => {
-                            warn!("DNS解析失败 {target_str}: {e}");
-                            None
+                        Err(_) => {
+                            // DNS解析失败，如果目标当前是不健康的，也需要批量更新来重试
+                            if !target_info_clone.healthy {
+                                Some((target_str_clone, "retry_failed".to_string()))
+                            } else {
+                                // 当前健康但本次解析失败，可能需要重试
+                                Some((target_str_clone, "newly_failed".to_string()))
+                            }
                         }
                     }
                 });
-                dns_tasks.push(task);
+                dns_check_tasks.push(task);
             }
         }
 
-        // 等待所有DNS解析完成并更新缓存
-        for task in dns_tasks {
-            if let Ok(Some((target_str, mut target_info, new_resolved))) = task.await {
-                target_info.resolved = new_resolved;
-                target_info.last_check = Instant::now();
-                // DNS变化时重置健康状态，让健康检查重新评估
-                target_info.healthy = true;
-                target_info.fail_count = 0;
-                target_cache.insert(target_str, target_info);
+        // 收集需要更新的原因
+        let mut update_reasons = Vec::new();
+        for task in dns_check_tasks {
+            if let Ok(Some((domain, reason))) = task.await {
+                update_reasons.push((domain, reason));
+                needs_batch_update = true;
             }
+        }
+
+        // 如果需要批量更新（有变化或需要重试失败的域名）
+        if needs_batch_update {
+            info!("检测到DNS变化或失败域名，触发所有域名批量重新解析和验证");
+            
+            // 记录触发批量更新的原因
+            for (domain, reason) in update_reasons {
+                match reason.as_str() {
+                    "changed" => info!("触发原因: {} DNS解析变化", domain),
+                    "retry_failed" => info!("触发原因: {} 重试解析失败的域名", domain),
+                    "newly_failed" => info!("触发原因: {} 新发现解析失败", domain),
+                    _ => {}
+                }
+            }
+            
+            // 第二阶段：对所有域名进行重新解析（包括之前失败的）
+            let mut batch_resolve_tasks = Vec::new();
+            for (target_str, target_info) in targets {
+                // 只处理域名，跳过IP地址
+                if target_str.parse::<std::net::IpAddr>().is_err() && target_str.contains('.') {
+                    let task = tokio::spawn(async move {
+                        match resolve_target(&target_str).await {
+                            Ok(new_resolved) => {
+                                let mut updated_info = target_info.clone();
+                                let has_changed = new_resolved != target_info.resolved;
+                                let was_failed = !target_info.healthy;
+                                
+                                if has_changed {
+                                    info!(
+                                        "目标 {} DNS解析变化: {} -> {}",
+                                        target_str, target_info.resolved, new_resolved
+                                    );
+                                } else if was_failed {
+                                    info!("目标 {} DNS重新解析成功: {}", target_str, new_resolved);
+                                }
+                                
+                                updated_info.resolved = new_resolved;
+                                updated_info.last_check = Instant::now();
+                                
+                                Some((target_str, updated_info, has_changed || was_failed))
+                            }
+                            Err(e) => {
+                                warn!("目标 {} DNS重新解析仍然失败: {}", target_str, e);
+                                // 即使解析失败，也要更新last_check时间
+                                let mut failed_info = target_info.clone();
+                                failed_info.last_check = Instant::now();
+                                failed_info.healthy = false;
+                                failed_info.fail_count += 1;
+                                Some((target_str, failed_info, false))
+                            }
+                        }
+                    });
+                    batch_resolve_tasks.push(task);
+                }
+            }
+
+            // 第三阶段：并发验证所有处理过的地址
+            let mut verification_tasks = Vec::new();
+            for task in batch_resolve_tasks {
+                if let Ok(Some((target_str, mut target_info, should_verify))) = task.await {
+                    if should_verify {
+                        // 对有变化或之前失败的域名进行连接验证
+                        let verification_task = tokio::spawn(async move {
+                            let connection_result = tokio::time::timeout(
+                                Duration::from_secs(5),
+                                crate::utils::test_connection(&target_str)
+                            ).await;
+
+                            match connection_result {
+                                Ok(Ok(_)) => {
+                                    target_info.healthy = true;
+                                    target_info.fail_count = 0;
+                                    info!("目标 {} 重新验证连接成功", target_str);
+                                }
+                                Ok(Err(e)) => {
+                                    target_info.healthy = false;
+                                    target_info.fail_count += 1;
+                                    warn!("目标 {} 重新验证连接失败: {}", target_str, e);
+                                }
+                                Err(_) => {
+                                    target_info.healthy = false;
+                                    target_info.fail_count += 1;
+                                    warn!("目标 {} 重新验证连接超时", target_str);
+                                }
+                            }
+
+                            (target_str, target_info)
+                        });
+                        verification_tasks.push(verification_task);
+                    } else {
+                        // 直接更新缓存（解析失败的情况）
+                        target_cache.insert(target_str, target_info);
+                    }
+                }
+            }
+
+            // 批量更新缓存
+            for task in verification_tasks {
+                if let Ok((target_str, target_info)) = task.await {
+                    target_cache.insert(target_str, target_info);
+                }
+            }
+            
+            info!("批量DNS重新解析和验证完成");
         }
     }
 
