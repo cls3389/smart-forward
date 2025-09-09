@@ -102,7 +102,7 @@ async fn main() -> Result<()> {
     logger_builder.init();
 
     // 显示启动信息
-    println!("智能转发器 v0.1.0");
+    println!("智能转发器 v{}", env!("CARGO_PKG_VERSION"));
     println!("配置文件: {}", args.config.display());
     println!("工作目录: {}", std::env::current_dir()?.display());
     println!(
