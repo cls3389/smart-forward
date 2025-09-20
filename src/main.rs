@@ -7,7 +7,7 @@ mod utils;
 use anyhow::Result;
 use chrono;
 use clap::Parser;
-use log::info;
+use log::{info, warn};
 use serde_json;
 use std::path::PathBuf;
 
@@ -98,7 +98,7 @@ async fn main() -> Result<()> {
 
     let mut logger_builder = env_logger::Builder::from_default_env();
     logger_builder.filter_level(log_level);
-    
+
     let is_json = config.logging.format.eq_ignore_ascii_case("json");
     if is_json {
         logger_builder.format(|buf, record| {
@@ -155,7 +155,10 @@ async fn main() -> Result<()> {
         "iptables" => FirewallBackend::Iptables,
         "auto" => detect_firewall_backend(),
         _ => {
-            println!("⚠️  未知的防火墙后端: {}，使用自动检测", args.firewall_backend);
+            println!(
+                "⚠️  未知的防火墙后端: {}，使用自动检测",
+                args.firewall_backend
+            );
             detect_firewall_backend()
         }
     };
@@ -244,10 +247,11 @@ async fn main() -> Result<()> {
         } else if args.kernel_mode {
             info!("🚀 强制启用内核态转发模式");
             let mut scheduler = FirewallScheduler::new(
-                firewall_backend,
+                firewall_backend.clone(),
                 config.clone(),
                 common_manager.clone(),
-            ).await?;
+            )
+            .await?;
             scheduler.initialize().await?;
             info!("✅ 内核态转发启用成功，防火墙后端: {:?}", firewall_backend);
             Some(scheduler)
@@ -255,23 +259,26 @@ async fn main() -> Result<()> {
             // 默认行为：自动尝试内核态转发，失败则回退
             info!("🚀 自动尝试内核态转发（优先高性能模式）");
             match FirewallScheduler::new(
-                firewall_backend,
+                firewall_backend.clone(),
                 config.clone(),
                 common_manager.clone(),
-            ).await {
-                Ok(mut scheduler) => {
-                    match scheduler.initialize().await {
-                        Ok(_) => {
-                            info!("✅ 内核态转发自动启用成功，防火墙后端: {:?}", firewall_backend);
-                            Some(scheduler)
-                        }
-                        Err(e) => {
-                            warn!("⚠️  内核态转发初始化失败: {}，自动回退到用户态转发", e);
-                            info!("💡 提示：可使用 --user-mode 禁用内核态自动尝试");
-                            None
-                        }
+            )
+            .await
+            {
+                Ok(mut scheduler) => match scheduler.initialize().await {
+                    Ok(_) => {
+                        info!(
+                            "✅ 内核态转发自动启用成功，防火墙后端: {:?}",
+                            firewall_backend
+                        );
+                        Some(scheduler)
                     }
-                }
+                    Err(e) => {
+                        warn!("⚠️  内核态转发初始化失败: {}，自动回退到用户态转发", e);
+                        info!("💡 提示：可使用 --user-mode 禁用内核态自动尝试");
+                        None
+                    }
+                },
                 Err(e) => {
                     warn!("⚠️  内核态转发创建失败: {}，自动回退到用户态转发", e);
                     info!("💡 提示：可使用 --user-mode 禁用内核态自动尝试");
@@ -283,7 +290,10 @@ async fn main() -> Result<()> {
         }
     } else {
         if args.kernel_mode {
-            warn!("⚠️  内核态转发仅支持Linux系统，在{}上自动使用用户态转发", std::env::consts::OS);
+            warn!(
+                "⚠️  内核态转发仅支持Linux系统，在{}上自动使用用户态转发",
+                std::env::consts::OS
+            );
         }
         None
     };

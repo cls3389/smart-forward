@@ -2,7 +2,8 @@
 // 专门解决OpenWrt Firewall4优先级冲突问题
 
 use anyhow::Result;
-use log::{debug, error, info, warn};
+use async_trait::async_trait;
+use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::process::Command;
 use std::sync::Arc;
@@ -75,6 +76,7 @@ impl FirewallRule {
 // ================================
 // 防火墙管理器特征
 // ================================
+#[async_trait]
 pub trait FirewallManager: Send + Sync {
     async fn initialize(&mut self) -> Result<()>;
     async fn add_forward_rule(&mut self, rule: &FirewallRule) -> Result<()>;
@@ -181,7 +183,9 @@ impl NftablesManager {
     fn generate_dnat_rule(&self, rule: &FirewallRule) -> Vec<String> {
         let target_parts: Vec<&str> = rule.target_addr.split(':').collect();
         let target_ip = target_parts[0];
-        let target_port = target_parts.get(1).unwrap_or(&rule.listen_port.to_string());
+        let port_str = rule.listen_port.to_string();
+        let port_str_ref = port_str.as_str();
+        let target_port = target_parts.get(1).unwrap_or(&port_str_ref);
 
         vec![
             "add".to_string(),
@@ -198,7 +202,7 @@ impl NftablesManager {
         ]
     }
 
-    fn generate_snat_rule(&self, rule: &FirewallRule) -> Vec<String> {
+    fn generate_snat_rule(&self, _rule: &FirewallRule) -> Vec<String> {
         // 对于转发到外网的流量，添加SNAT规则
         vec![
             "add".to_string(),
@@ -214,6 +218,7 @@ impl NftablesManager {
     }
 }
 
+#[async_trait]
 impl FirewallManager for NftablesManager {
     async fn initialize(&mut self) -> Result<()> {
         info!("初始化nftables管理器，针对Firewall4优先级优化");
@@ -226,7 +231,9 @@ impl FirewallManager for NftablesManager {
         // 如果表已存在，先清理
         if self.table_exists().await? {
             warn!("检测到已存在的smart_forward表，正在清理...");
-            let _ = self.execute_nft(&["delete", "table", "inet", &self.table_name]).await;
+            let _ = self
+                .execute_nft(&["delete", "table", "inet", &self.table_name])
+                .await;
         }
 
         // 创建表和链
@@ -241,14 +248,19 @@ impl FirewallManager for NftablesManager {
 
         // 添加DNAT规则
         if rule.forward_type == ForwardType::DNAT {
-            let dnat_args: Vec<&str> = self.generate_dnat_rule(rule).iter().map(|s| s.as_str()).collect();
+            let dnat_strings = self.generate_dnat_rule(rule);
+            let dnat_args: Vec<&str> = dnat_strings.iter().map(|s| s.as_str()).collect();
             self.execute_nft(&dnat_args).await?;
-            debug!("添加DNAT规则: {}:{} -> {}", rule.protocol, rule.listen_port, rule.target_addr);
+            debug!(
+                "添加DNAT规则: {}:{} -> {}",
+                rule.protocol, rule.listen_port, rule.target_addr
+            );
         }
 
         // 添加SNAT规则（masquerade）
         if rule.forward_type == ForwardType::SNAT {
-            let snat_args: Vec<&str> = self.generate_snat_rule(rule).iter().map(|s| s.as_str()).collect();
+            let snat_strings = self.generate_snat_rule(rule);
+            let snat_args: Vec<&str> = snat_strings.iter().map(|s| s.as_str()).collect();
             self.execute_nft(&snat_args).await?;
             debug!("添加SNAT规则（masquerade）");
         }
@@ -260,7 +272,7 @@ impl FirewallManager for NftablesManager {
     }
 
     async fn remove_forward_rule(&mut self, rule_id: &str) -> Result<()> {
-        if let Some(rule) = self.rules.get(rule_id) {
+        if let Some(_rule) = self.rules.get(rule_id) {
             debug!("删除转发规则: {}", rule_id);
 
             // 由于nftables的规则删除比较复杂，我们采用重建策略
@@ -290,7 +302,8 @@ impl FirewallManager for NftablesManager {
 
         // 删除整个表
         if self.table_exists().await? {
-            self.execute_nft(&["delete", "table", "inet", &self.table_name]).await?;
+            self.execute_nft(&["delete", "table", "inet", &self.table_name])
+                .await?;
             info!("已删除smart_forward表");
         }
 
@@ -313,7 +326,8 @@ impl FirewallManager for NftablesManager {
 
         // 清空现有规则（保留表和链结构）
         if self.table_exists().await? {
-            self.execute_nft(&["flush", "table", "inet", &self.table_name]).await?;
+            self.execute_nft(&["flush", "table", "inet", &self.table_name])
+                .await?;
         } else {
             // 如果表不存在，重新创建
             self.create_table_and_chains().await?;
@@ -324,11 +338,13 @@ impl FirewallManager for NftablesManager {
             if rule.enabled {
                 // 直接添加规则，不更新内存（避免递归调用）
                 if rule.forward_type == ForwardType::DNAT {
-                    let dnat_args: Vec<&str> = self.generate_dnat_rule(rule).iter().map(|s| s.as_str()).collect();
+                    let dnat_strings = self.generate_dnat_rule(rule);
+                    let dnat_args: Vec<&str> = dnat_strings.iter().map(|s| s.as_str()).collect();
                     self.execute_nft(&dnat_args).await?;
                 }
                 if rule.forward_type == ForwardType::SNAT {
-                    let snat_args: Vec<&str> = self.generate_snat_rule(rule).iter().map(|s| s.as_str()).collect();
+                    let snat_strings = self.generate_snat_rule(rule);
+                    let snat_args: Vec<&str> = snat_strings.iter().map(|s| s.as_str()).collect();
                     self.execute_nft(&snat_args).await?;
                 }
             }
@@ -380,27 +396,51 @@ impl IptablesManager {
 
         // 创建PREROUTING链
         if !self.chain_exists("nat", &self.chain_prerouting).await? {
-            self.execute_iptables(&["-t", "nat", "-N", &self.chain_prerouting]).await?;
+            self.execute_iptables(&["-t", "nat", "-N", &self.chain_prerouting])
+                .await?;
             debug!("创建链: {}", self.chain_prerouting);
         }
 
         // 创建POSTROUTING链
         if !self.chain_exists("nat", &self.chain_postrouting).await? {
-            self.execute_iptables(&["-t", "nat", "-N", &self.chain_postrouting]).await?;
+            self.execute_iptables(&["-t", "nat", "-N", &self.chain_postrouting])
+                .await?;
             debug!("创建链: {}", self.chain_postrouting);
         }
 
         // 将自定义链插入到主链的开头（高优先级）
         // 检查是否已经插入，避免重复
-        let prerouting_check = self.execute_iptables(&["-t", "nat", "-L", "PREROUTING", "--line-numbers"]).await?;
+        let prerouting_check = self
+            .execute_iptables(&["-t", "nat", "-L", "PREROUTING", "--line-numbers"])
+            .await?;
         if !prerouting_check.contains(&self.chain_prerouting) {
-            self.execute_iptables(&["-t", "nat", "-I", "PREROUTING", "1", "-j", &self.chain_prerouting]).await?;
+            self.execute_iptables(&[
+                "-t",
+                "nat",
+                "-I",
+                "PREROUTING",
+                "1",
+                "-j",
+                &self.chain_prerouting,
+            ])
+            .await?;
             info!("插入PREROUTING链到位置1（最高优先级）");
         }
 
-        let postrouting_check = self.execute_iptables(&["-t", "nat", "-L", "POSTROUTING", "--line-numbers"]).await?;
+        let postrouting_check = self
+            .execute_iptables(&["-t", "nat", "-L", "POSTROUTING", "--line-numbers"])
+            .await?;
         if !postrouting_check.contains(&self.chain_postrouting) {
-            self.execute_iptables(&["-t", "nat", "-I", "POSTROUTING", "1", "-j", &self.chain_postrouting]).await?;
+            self.execute_iptables(&[
+                "-t",
+                "nat",
+                "-I",
+                "POSTROUTING",
+                "1",
+                "-j",
+                &self.chain_postrouting,
+            ])
+            .await?;
             info!("插入POSTROUTING链到位置1");
         }
 
@@ -410,7 +450,9 @@ impl IptablesManager {
     fn generate_dnat_args(&self, rule: &FirewallRule) -> Vec<String> {
         let target_parts: Vec<&str> = rule.target_addr.split(':').collect();
         let target_ip = target_parts[0];
-        let target_port = target_parts.get(1).unwrap_or(&rule.listen_port.to_string());
+        let port_str = rule.listen_port.to_string();
+        let port_str_ref = port_str.as_str();
+        let target_port = target_parts.get(1).unwrap_or(&port_str_ref);
 
         vec![
             "-t".to_string(),
@@ -443,6 +485,7 @@ impl IptablesManager {
     }
 }
 
+#[async_trait]
 impl FirewallManager for IptablesManager {
     async fn initialize(&mut self) -> Result<()> {
         info!("初始化iptables管理器，针对传统OpenWrt优化");
@@ -460,18 +503,26 @@ impl FirewallManager for IptablesManager {
     }
 
     async fn add_forward_rule(&mut self, rule: &FirewallRule) -> Result<()> {
-        debug!("添加iptables转发规则: {} -> {}", rule.listen_port, rule.target_addr);
+        debug!(
+            "添加iptables转发规则: {} -> {}",
+            rule.listen_port, rule.target_addr
+        );
 
         // 添加DNAT规则
         if rule.forward_type == ForwardType::DNAT {
-            let dnat_args: Vec<&str> = self.generate_dnat_args(rule).iter().map(|s| s.as_str()).collect();
+            let dnat_strings = self.generate_dnat_args(rule);
+            let dnat_args: Vec<&str> = dnat_strings.iter().map(|s| s.as_str()).collect();
             self.execute_iptables(&dnat_args).await?;
-            debug!("添加DNAT规则: {}:{} -> {}", rule.protocol, rule.listen_port, rule.target_addr);
+            debug!(
+                "添加DNAT规则: {}:{} -> {}",
+                rule.protocol, rule.listen_port, rule.target_addr
+            );
         }
 
         // 添加SNAT规则（masquerade）
         if rule.forward_type == ForwardType::SNAT {
-            let snat_args: Vec<&str> = self.generate_snat_args().iter().map(|s| s.as_str()).collect();
+            let snat_strings = self.generate_snat_args();
+            let snat_args: Vec<&str> = snat_strings.iter().map(|s| s.as_str()).collect();
             self.execute_iptables(&snat_args).await?;
             debug!("添加SNAT规则（masquerade）");
         }
@@ -496,7 +547,10 @@ impl FirewallManager for IptablesManager {
     }
 
     async fn update_forward_rule(&mut self, rule: &FirewallRule) -> Result<()> {
-        debug!("更新iptables转发规则: {} -> {}", rule.listen_port, rule.target_addr);
+        debug!(
+            "更新iptables转发规则: {} -> {}",
+            rule.listen_port, rule.target_addr
+        );
 
         // 更新内存中的规则
         self.rules.insert(rule.rule_id.clone(), rule.clone());
@@ -512,16 +566,42 @@ impl FirewallManager for IptablesManager {
         info!("清理所有iptables规则");
 
         // 清空自定义链
-        let _ = self.execute_iptables(&["-t", "nat", "-F", &self.chain_prerouting]).await;
-        let _ = self.execute_iptables(&["-t", "nat", "-F", &self.chain_postrouting]).await;
+        let _ = self
+            .execute_iptables(&["-t", "nat", "-F", &self.chain_prerouting])
+            .await;
+        let _ = self
+            .execute_iptables(&["-t", "nat", "-F", &self.chain_postrouting])
+            .await;
 
         // 从主链中移除跳转规则
-        let _ = self.execute_iptables(&["-t", "nat", "-D", "PREROUTING", "-j", &self.chain_prerouting]).await;
-        let _ = self.execute_iptables(&["-t", "nat", "-D", "POSTROUTING", "-j", &self.chain_postrouting]).await;
+        let _ = self
+            .execute_iptables(&[
+                "-t",
+                "nat",
+                "-D",
+                "PREROUTING",
+                "-j",
+                &self.chain_prerouting,
+            ])
+            .await;
+        let _ = self
+            .execute_iptables(&[
+                "-t",
+                "nat",
+                "-D",
+                "POSTROUTING",
+                "-j",
+                &self.chain_postrouting,
+            ])
+            .await;
 
         // 删除自定义链
-        let _ = self.execute_iptables(&["-t", "nat", "-X", &self.chain_prerouting]).await;
-        let _ = self.execute_iptables(&["-t", "nat", "-X", &self.chain_postrouting]).await;
+        let _ = self
+            .execute_iptables(&["-t", "nat", "-X", &self.chain_prerouting])
+            .await;
+        let _ = self
+            .execute_iptables(&["-t", "nat", "-X", &self.chain_postrouting])
+            .await;
 
         // 清空内存中的规则
         self.rules.clear();
@@ -542,19 +622,25 @@ impl FirewallManager for IptablesManager {
         debug!("重建所有iptables规则，共{}条", rules.len());
 
         // 清空现有规则（保留链结构）
-        let _ = self.execute_iptables(&["-t", "nat", "-F", &self.chain_prerouting]).await;
-        let _ = self.execute_iptables(&["-t", "nat", "-F", &self.chain_postrouting]).await;
+        let _ = self
+            .execute_iptables(&["-t", "nat", "-F", &self.chain_prerouting])
+            .await;
+        let _ = self
+            .execute_iptables(&["-t", "nat", "-F", &self.chain_postrouting])
+            .await;
 
         // 重新添加所有规则
         for rule in rules {
             if rule.enabled {
                 // 直接添加规则，不更新内存（避免递归调用）
                 if rule.forward_type == ForwardType::DNAT {
-                    let dnat_args: Vec<&str> = self.generate_dnat_args(rule).iter().map(|s| s.as_str()).collect();
+                    let dnat_strings = self.generate_dnat_args(rule);
+                    let dnat_args: Vec<&str> = dnat_strings.iter().map(|s| s.as_str()).collect();
                     let _ = self.execute_iptables(&dnat_args).await;
                 }
                 if rule.forward_type == ForwardType::SNAT {
-                    let snat_args: Vec<&str> = self.generate_snat_args().iter().map(|s| s.as_str()).collect();
+                    let snat_strings = self.generate_snat_args();
+                    let snat_args: Vec<&str> = snat_strings.iter().map(|s| s.as_str()).collect();
                     let _ = self.execute_iptables(&snat_args).await;
                 }
             }
@@ -619,7 +705,7 @@ impl FirewallScheduler {
                 let protocols = rule_config.get_protocols();
                 for protocol in protocols {
                     let rule_id = format!("{}_{}", rule_config.name, protocol);
-                    
+
                     // 创建DNAT规则
                     let dnat_rule = FirewallRule::new(
                         format!("{}_dnat", rule_id),
@@ -649,7 +735,10 @@ impl FirewallScheduler {
                     rules.insert(dnat_rule.rule_id.clone(), dnat_rule);
                     rules.insert(snat_rule.rule_id.clone(), snat_rule);
 
-                    info!("创建规则: {} {} -> {}", rule_config.name, protocol, target_addr);
+                    info!(
+                        "创建规则: {} {} -> {}",
+                        rule_config.name, protocol, target_addr
+                    );
                 }
             } else {
                 warn!("规则 {} 没有可用的目标地址", rule_config.name);
@@ -670,20 +759,24 @@ impl FirewallScheduler {
                 let protocols = rule_config.get_protocols();
                 for protocol in protocols {
                     let dnat_rule_id = format!("{}_{}_dnat", rule_config.name, protocol);
-                    
-                    let rules = self.rules.read().await;
-                    if let Some(existing_rule) = rules.get(&dnat_rule_id) {
+
+                    let existing_rule = {
+                        let rules = self.rules.read().await;
+                        rules.get(&dnat_rule_id).cloned()
+                    };
+
+                    if let Some(existing_rule) = existing_rule {
                         if existing_rule.target_addr != target_addr {
-                            drop(rules); // 释放读锁
-                            
                             // 需要更新规则
-                            info!("目标变更: {} {} {} -> {}", 
-                                rule_config.name, protocol, existing_rule.target_addr, target_addr);
-                            
+                            info!(
+                                "目标变更: {} {} {} -> {}",
+                                rule_config.name, protocol, existing_rule.target_addr, target_addr
+                            );
+
                             // 更新DNAT规则
                             let mut updated_dnat = existing_rule.clone();
                             updated_dnat.target_addr = target_addr.clone();
-                            
+
                             // 这里需要调用manager的update方法
                             // 由于借用检查器的限制，我们需要重新设计这部分
                             // 暂时使用debug日志标记
