@@ -200,6 +200,7 @@ impl NftablesManager {
             "dport".to_string(),
             rule.listen_port.to_string(),
             "dnat".to_string(),
+            "ip".to_string(),
             "to".to_string(),
             format!("{}:{}", target_ip, target_port),
         ]
