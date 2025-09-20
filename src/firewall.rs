@@ -98,15 +98,17 @@ pub struct NftablesManager {
     table_name: String,
     chain_prerouting: String,
     chain_postrouting: String,
+    listen_addr: String,
     rules: HashMap<String, FirewallRule>,
 }
 
 impl NftablesManager {
-    pub fn new() -> Self {
+    pub fn new(listen_addr: String) -> Self {
         Self {
             table_name: "smart_forward".to_string(),
             chain_prerouting: "prerouting".to_string(),
             chain_postrouting: "postrouting".to_string(),
+            listen_addr,
             rules: HashMap::new(),
         }
     }
@@ -222,12 +224,26 @@ impl NftablesManager {
             format!("{}:{}", target_ip, target_port)
         };
 
-        vec![
+        // DNAT规则生成：只有指定具体监听地址时才添加地址限制
+        let mut rule_args = vec![
             "add".to_string(),
             "rule".to_string(),
             "inet".to_string(),
             self.table_name.clone(),
             self.chain_prerouting.clone(),
+        ];
+
+        // 只有当监听地址不是0.0.0.0时才添加目标地址限制
+        // 0.0.0.0在路由系统中不推荐使用，但保持兼容性
+        if self.listen_addr != "0.0.0.0" {
+            rule_args.extend(vec![
+                "ip".to_string(),
+                "daddr".to_string(),
+                self.listen_addr.clone(),
+            ]);
+        }
+
+        rule_args.extend(vec![
             rule.protocol.clone(),
             "dport".to_string(),
             rule.listen_port.to_string(),
@@ -235,7 +251,9 @@ impl NftablesManager {
             ip_version.to_string(),
             "to".to_string(),
             formatted_target,
-        ]
+        ]);
+
+        rule_args
     }
 
     fn generate_snat_rule(&self, _rule: &FirewallRule) -> Vec<String> {
@@ -397,14 +415,16 @@ impl FirewallManager for NftablesManager {
 pub struct IptablesManager {
     chain_prerouting: String,
     chain_postrouting: String,
+    listen_addr: String,
     rules: HashMap<String, FirewallRule>,
 }
 
 impl IptablesManager {
-    pub fn new() -> Self {
+    pub fn new(listen_addr: String) -> Self {
         Self {
             chain_prerouting: "SMART_FORWARD_PREROUTING".to_string(),
             chain_postrouting: "SMART_FORWARD_POSTROUTING".to_string(),
+            listen_addr,
             rules: HashMap::new(),
         }
     }
@@ -490,11 +510,21 @@ impl IptablesManager {
         let port_str_ref = port_str.as_str();
         let target_port = target_parts.get(1).unwrap_or(&port_str_ref);
 
-        vec![
+        // DNAT规则生成：只有指定具体监听地址时才添加地址限制
+        let mut rule_args = vec![
             "-t".to_string(),
             "nat".to_string(),
             "-A".to_string(),
             self.chain_prerouting.clone(),
+        ];
+
+        // 只有当监听地址不是0.0.0.0时才添加目标地址限制
+        // 0.0.0.0在路由系统中不推荐使用，但保持兼容性
+        if self.listen_addr != "0.0.0.0" {
+            rule_args.extend(vec!["-d".to_string(), self.listen_addr.clone()]);
+        }
+
+        rule_args.extend(vec![
             "-p".to_string(),
             rule.protocol.clone(),
             "--dport".to_string(),
@@ -503,7 +533,9 @@ impl IptablesManager {
             "DNAT".to_string(),
             "--to-destination".to_string(),
             format!("{}:{}", target_ip, target_port),
-        ]
+        ]);
+
+        rule_args
     }
 
     fn generate_snat_args(&self) -> Vec<String> {
@@ -704,9 +736,10 @@ impl FirewallScheduler {
         config: Config,
         common_manager: CommonManager,
     ) -> Result<Self> {
+        let listen_addr = config.network.first();
         let manager: Box<dyn FirewallManager> = match backend {
-            FirewallBackend::Nftables => Box::new(NftablesManager::new()),
-            FirewallBackend::Iptables => Box::new(IptablesManager::new()),
+            FirewallBackend::Nftables => Box::new(NftablesManager::new(listen_addr)),
+            FirewallBackend::Iptables => Box::new(IptablesManager::new(listen_addr)),
         };
 
         Ok(Self {

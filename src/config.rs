@@ -1,7 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fs;
-
 use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,7 +20,20 @@ pub struct LoggingConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkConfig {
-    pub listen_addr: String,
+    pub listen_addrs: Vec<String>,
+}
+
+impl NetworkConfig {
+    pub fn contains_wildcard(&self) -> bool {
+        self.listen_addrs.iter().any(|addr| addr == "0.0.0.0")
+    }
+
+    pub fn first(&self) -> String {
+        self.listen_addrs
+            .first()
+            .unwrap_or(&"0.0.0.0".to_string())
+            .clone()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,8 +65,9 @@ impl Config {
             config.buffer_size = Some(16384);
         }
 
-        if config.network.listen_addr.is_empty() {
-            config.network.listen_addr = "0.0.0.0".to_string();
+        // 处理空的监听地址配置
+        if config.network.listen_addrs.is_empty() {
+            config.network.listen_addrs = vec!["0.0.0.0".to_string()];
         }
 
         // 设置动态更新默认值（优化的内置参数）
@@ -64,6 +77,13 @@ impl Config {
                 connection_timeout: Some(2), // 2秒连接超时，快速故障检测
                 auto_reconnect: Some(true),  // 默认开启自动重连
             });
+        }
+
+        // 0.0.0.0监听地址处理：建议手动配置或回退用户态
+        if config.network.contains_wildcard() {
+            log::warn!("⚠️  监听地址包含0.0.0.0");
+            log::warn!("⚠️  内核态转发时可能会劫持所有端口流量");
+            log::warn!("⚠️  建议：1) 手动指定LAN地址  2) 使用用户态转发");
         }
 
         // 验证配置

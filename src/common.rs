@@ -125,10 +125,11 @@ impl CommonManager {
         let config = self.config.clone(); // 传递配置信息
 
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(5)); // 加速检查间隔到5秒
+            let check_interval = config.get_dynamic_update_config().get_check_interval();
+            let mut interval = tokio::time::interval(Duration::from_secs(check_interval));
             let mut _check_count = 0;
 
-            info!("启动定期健康检查任务，间隔5秒");
+            info!("启动定期健康检查任务，间隔{}秒", check_interval);
 
             let mut last_status = None;
 
@@ -173,6 +174,7 @@ impl CommonManager {
             // 只处理域名，跳过IP:PORT格式
             if target_str.parse::<std::net::SocketAddr>().is_err() && target_str.contains('.') {
                 let target_cache_clone = target_cache.clone();
+                let config_clone = config.clone();
                 let task = tokio::spawn(async move {
                     match resolve_target(&target_str).await {
                         Ok(new_resolved) => {
@@ -192,8 +194,13 @@ impl CommonManager {
                             // 只有当地址真正变化时才进行立即连接验证
                             if has_changed {
                                 // 同步连接验证，确保新地址健康了再指定到规则
+                                let timeout_duration = Duration::from_secs(
+                                    config_clone
+                                        .get_dynamic_update_config()
+                                        .get_connection_timeout(),
+                                );
                                 let connection_result = tokio::time::timeout(
-                                    Duration::from_secs(2), // 使用2秒快速超时
+                                    timeout_duration,
                                     crate::utils::test_connection(&new_resolved.to_string()),
                                 )
                                 .await;
@@ -295,11 +302,16 @@ impl CommonManager {
                 .copied()
                 .unwrap_or("tcp");
 
+            let config_clone = config.clone();
             let task = tokio::spawn(async move {
                 let start = Instant::now();
 
-                // 使用统一的超时时间 - 加速故障检测
-                let timeout_duration = Duration::from_secs(2); // 缩短到2秒超时，快速检测故障
+                // 使用配置的超时时间
+                let timeout_duration = Duration::from_secs(
+                    config_clone
+                        .get_dynamic_update_config()
+                        .get_connection_timeout(),
+                );
 
                 // 根据规则配置决定健康检查协议
                 let result = if protocol_to_check == "udp" {

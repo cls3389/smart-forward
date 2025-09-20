@@ -242,8 +242,12 @@ async fn main() -> Result<()> {
     // 智能选择转发模式：默认优先内核态，失败自动回退用户态
     let firewall_scheduler = if cfg!(target_os = "linux") {
         // Linux环境：智能转发模式选择
-        if args.user_mode {
-            info!("📡 强制使用用户态转发模式");
+        if args.user_mode || config.network.contains_wildcard() {
+            if config.network.contains_wildcard() {
+                info!("📡 监听地址包含0.0.0.0，自动使用用户态转发避免劫持问题");
+            } else {
+                info!("📡 强制使用用户态转发模式");
+            }
             None
         } else if args.kernel_mode {
             info!("🚀 强制启用内核态转发模式");

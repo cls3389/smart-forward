@@ -66,7 +66,8 @@ logging:
   format: "json"
 
 network:
-  listen_addr: "0.0.0.0"
+  listen_addr: "10.5.1.1"  # 指定监听地址，避免劫持所有请求
+                            # 设置0.0.0.0会劫持所有端口流量，请谨慎使用
 
 # 转发规则
 rules:
@@ -143,21 +144,27 @@ logread | grep smart-forward | grep -E 'ERROR|WARN|错误'
 
 ## 📚 文档
 
-- ⚙️ **[配置指南](docs/CONFIGURATION.md)** - 完整的配置选项和示例
-- 🔧 **[故障排除](docs/TROUBLESHOOTING.md)** - 常见问题解决方案
+所有配置和故障排除信息已整合到本README中，包括：
+- ⚙️ **配置说明** - 完整的配置选项和示例
+- 🔧 **故障排除** - 常见问题解决方案
+- 📊 **日志查看** - 详细的日志分析方法
 
 ## 📁 项目结构
 
 ```
 smart-forward/
-├── 📁 src/              # 🦀 Rust 源代码
-├── 📁 docs/             # 📚 详细文档
-├── 📁 docker/           # 🐳 Docker 配置文件
-├── 📁 scripts/          # 🔧 构建和安装脚本
-├── 📄 README.md         # 📖 项目说明
-├── ⚙️ config.yaml       # 🎯 主配置文件
-└── 🏗️ Cargo.toml        # 📦 Rust 项目配置
+├── 📁 src/                    # 🦀 Rust 源代码
+├── 📁 docker/                 # 🐳 Docker 配置文件
+├── 📄 install.sh              # 🚀 统一安装脚本
+├── 📄 README.md               # 📖 完整文档 (配置+故障排除)
+├── ⚙️ config.yaml.example     # 🎯 配置文件示例
+└── 🏗️ Cargo.toml              # 📦 Rust 项目配置
 ```
+
+**简化原则**:
+- ✅ **一个安装脚本** - 自动检测环境，支持所有平台
+- ✅ **一个文档文件** - README包含所有必要信息
+- ✅ **核心功能** - 专注于高性能网络转发
 
 ## 📈 版本更新
 
@@ -403,10 +410,141 @@ cargo build --release
 
 欢迎贡献代码！请查看 [贡献指南](CONTRIBUTING.md) 了解详情。
 
+## ⚙️ 配置说明
+
+### 基础配置
+```yaml
+# 日志配置
+logging:
+  level: "info"           # 日志级别: trace, debug, info, warn, error
+  format: "text"          # 日志格式: text (OpenWrt推荐), json (Linux推荐)
+
+# 网络配置
+network:
+  listen_addr: "10.5.1.1"  # 指定监听地址，避免劫持所有请求
+                            # 设置0.0.0.0会劫持所有端口流量，请谨慎使用  # 监听地址
+
+# 缓冲区大小 (仅用户态模式有效，内核态模式忽略)
+buffer_size: 8192
+
+# 全局动态更新配置
+dynamic_update:
+  check_interval: 5       # 健康检查间隔 (秒)
+  connection_timeout: 2   # 连接超时 (秒)
+  auto_reconnect: true    # 自动重连
+
+# 转发规则
+rules:
+  - name: "HTTPS"
+    listen_port: 443
+    protocol: "tcp"        # tcp, udp, 或 ["tcp", "udp"]
+    buffer_size: 4096      # 规则级缓冲区大小
+    targets:
+      - "192.168.1.100:443"  # 内网服务器 (最高优先级)
+      - "backup.example.com:443"  # 外网备用
+    dynamic_update:
+      check_interval: 5
+      connection_timeout: 2
+      auto_reconnect: true
+```
+
+### 高级配置
+```yaml
+# 多协议转发
+rules:
+  - name: "RDP"
+    listen_port: 3389
+    protocol: ["tcp", "udp"]  # 同时支持TCP和UDP
+    targets:
+      - "192.168.1.10:3389"
+
+# TXT记录解析 (动态IP)
+rules:
+  - name: "Dynamic"
+    listen_port: 8080
+    protocol: "tcp"
+    targets:
+      - "dynamic.example.com"  # 自动解析TXT记录
+```
+
+## 🔧 故障排除
+
+### 常见问题
+
+#### 1. 内核态转发失败
+**症状**: 日志显示 `内核态转发初始化失败`
+```bash
+# 检查防火墙后端
+sudo nft --version  # nftables
+sudo iptables --version  # iptables
+
+# 检查权限
+sudo ./smart-forward --kernel-mode
+
+# 强制用户态模式
+./smart-forward --user-mode
+```
+
+#### 2. 端口被占用
+**症状**: `Address already in use`
+```bash
+# 查看端口占用
+sudo netstat -tulpn | grep :443
+sudo lsof -i :443
+
+# 停止冲突服务
+sudo systemctl stop nginx  # 示例
+```
+
+#### 3. 健康检查失败
+**症状**: 所有目标显示异常
+```bash
+# 手动测试连接
+telnet target.example.com 443
+nc -zv target.example.com 443
+
+# 检查DNS解析
+nslookup target.example.com
+dig target.example.com TXT
+```
+
+#### 4. 配置文件错误
+**症状**: `配置文件解析失败`
+```bash
+# 验证YAML语法
+./smart-forward --validate-config
+
+# 使用默认配置
+cp config.yaml.example config.yaml
+```
+
+### 日志分析
+```bash
+# Linux
+sudo journalctl -u smart-forward -f
+
+# OpenWrt
+logread -f | grep smart-forward
+
+# 查看错误
+logread | grep smart-forward | grep -E 'ERROR|WARN|错误'
+```
+
+### 性能优化
+```bash
+# 检查运行模式
+# 内核态: 0个端口监听，有nftables规则
+# 用户态: 多个端口监听，无nftables规则
+
+# 内存使用检查
+ps aux | grep smart-forward
+cat /proc/$(pidof smart-forward)/status | grep Vm
+```
+
 ## 📄 许可证
 
 本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
 
 ---
 
-**🚀 立即开始**: [安装指南](INSTALLATION.md) | [配置示例](EXAMPLES.md) | [Docker部署](DEPLOYMENT.md#docker-部署)
+**🚀 立即开始**: `curl -fsSL https://raw.githubusercontent.com/cls3389/smart-forward/main/install.sh | bash`

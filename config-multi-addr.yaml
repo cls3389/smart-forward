@@ -1,0 +1,44 @@
+# 多监听地址配置示例
+# 智能网络转发器配置文件
+
+# 日志配置
+logging:
+  level: "info"
+  format: "text"
+
+# 网络配置 - 多监听地址示例
+network:
+  listen_addrs:
+    - "192.168.1.1"      # 主LAN地址
+    - "10.0.0.1"         # 企业网络地址
+    - "172.16.0.1"       # 虚拟网络地址
+
+# 缓冲区大小
+buffer_size: 8192
+
+# 全局动态更新配置
+dynamic_update:
+  check_interval: 5       # 健康检查间隔 (秒)
+  connection_timeout: 2   # 连接超时 (秒)
+  auto_reconnect: true    # 自动重连
+
+# 转发规则
+rules:
+  - name: "HTTPS"
+    listen_port: 443
+    protocol: "tcp"
+    targets:
+      - "192.168.1.100:443"        # 主服务器
+      - "backup.example.com:443"   # 备用服务器
+      
+  - name: "RDP"
+    listen_port: 99
+    protocol: ["tcp", "udp"]  # TCP+UDP双协议
+    targets:
+      - "192.168.1.200:3389"
+      
+  - name: "Drive"
+    listen_port: 6690
+    protocol: "tcp"
+    targets:
+      - "192.168.1.300:6690"

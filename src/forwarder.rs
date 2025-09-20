@@ -905,7 +905,7 @@ impl SmartForwarder {
     }
 
     async fn start_auto_http_redirect(&mut self) -> Result<()> {
-        let listen_addr = format!("{}:80", self.config.network.listen_addr);
+        let listen_addr = format!("{}:80", self.config.network.first());
 
         // 检查80端口是否被占用
         if tokio::net::TcpListener::bind(&listen_addr).await.is_err() {
@@ -929,7 +929,7 @@ impl SmartForwarder {
     }
 
     async fn start_forwarder(&mut self, rule: &ForwardRule) -> Result<()> {
-        let listen_addr = rule.get_listen_addr(&self.config.network.listen_addr);
+        let listen_addr = rule.get_listen_addr(&self.config.network.first());
 
         // 获取最佳目标
         if let Ok(best_target) = self.common_manager.get_best_target(&rule.name).await {

@@ -34,17 +34,16 @@ COPY src ./src
 RUN cargo build --release --target x86_64-unknown-linux-musl && \
     strip target/x86_64-unknown-linux-musl/release/smart-forward
 
-# ===== 运行时镜像 - 使用Ubuntu确保兼容性 =====
-FROM ubuntu:22.04
+# ===== 运行时镜像 - 使用Alpine Linux =====
+FROM alpine:3.18
 
 # 安装运行时依赖（包含防火墙工具）
-RUN apt-get update && apt-get install -y \
+RUN apk add --no-cache \
     ca-certificates \
     tzdata \
     iptables \
-    nftables \
-    && rm -rf /var/lib/apt/lists/* \
-    && useradd -r -s /bin/false smartforward
+    ip6tables \
+    && adduser -D -s /bin/false smartforward
 
 WORKDIR /app
 
