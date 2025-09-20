@@ -1,0 +1,38 @@
+# Smart Forward - 预编译二进制Docker镜像
+# 使用GitHub Actions预编译的musl静态二进制文件
+
+# ===== 运行时镜像 - 使用Alpine Linux =====
+FROM alpine:3.18
+
+# 安装运行时依赖（包含防火墙工具）
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    iptables \
+    ip6tables \
+    && adduser -D -s /bin/false smartforward
+
+# 创建应用目录
+RUN mkdir -p /app/logs && \
+    chown -R smartforward:smartforward /app
+
+# 复制预编译的二进制文件（由GitHub Actions构建）
+# 这些文件在构建时会被Docker buildx自动选择正确的架构
+COPY --from=binaries/smart-forward /usr/local/bin/smart-forward
+RUN chmod +x /usr/local/bin/smart-forward
+
+# 创建默认配置
+RUN printf 'logging:\n  level: "info"\n  format: "text"\nnetwork:\n  listen_addrs:\n    - "0.0.0.0"\nbuffer_size: 8192\nrules:\n  - name: "HTTP_TEST"\n    listen_port: 8080\n    protocol: "tcp"\n    targets:\n      - "httpbin.org:80"\n  - name: "DNS_TEST"\n    listen_port: 8053\n    protocol: "tcp"\n    targets:\n      - "1.1.1.1:53"\n' > /app/config.yaml && \
+    chown smartforward:smartforward /app/config.yaml
+
+USER smartforward
+
+EXPOSE 443 99 6690 999 8080 8053
+
+ENV RUST_LOG=info TZ=Asia/Shanghai
+
+# 健康检查：检查进程是否运行
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD pgrep smart-forward > /dev/null || exit 1
+
+CMD ["/usr/local/bin/smart-forward", "-c", "/app/config.yaml"]

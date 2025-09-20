@@ -278,11 +278,41 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: 创建简化Dockerfile
+        run: |
+          cat > Dockerfile.simple << 'EOF'
+          FROM alpine:3.18
+          
+          # 安装运行时依赖
+          RUN apk add --no-cache ca-certificates tzdata iptables ip6tables && \
+              adduser -D -s /bin/false smartforward && \
+              mkdir -p /app/logs && \
+              chown -R smartforward:smartforward /app
+          
+          # 复制对应架构的二进制文件
+          ARG TARGETARCH
+          COPY binaries/$TARGETARCH/smart-forward /usr/local/bin/smart-forward
+          RUN chmod +x /usr/local/bin/smart-forward
+          
+          # 创建默认配置
+          RUN printf 'logging:\n  level: "info"\n  format: "text"\nnetwork:\n  listen_addrs:\n    - "0.0.0.0"\nbuffer_size: 8192\nrules:\n  - name: "HTTP_TEST"\n    listen_port: 8080\n    protocol: "tcp"\n    targets:\n      - "httpbin.org:80"\n' > /app/config.yaml && \
+              chown smartforward:smartforward /app/config.yaml
+          
+          USER smartforward
+          EXPOSE 443 99 6690 999 8080
+          ENV RUST_LOG=info TZ=Asia/Shanghai
+          
+          HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+              CMD pgrep smart-forward > /dev/null || exit 1
+          
+          CMD ["/usr/local/bin/smart-forward", "-c", "/app/config.yaml"]
+          EOF
+
       - name: 构建并推送多架构 Docker 镜像
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./docker/Dockerfile
+          file: ./Dockerfile.simple
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
@@ -290,8 +320,6 @@ jobs:
             ghcr.io/${{ github.repository }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          build-contexts: |
-            binaries=./binaries
 
   # 3️⃣ 自动发布
   create-release:
