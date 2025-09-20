@@ -61,12 +61,6 @@ jobs:
             target: aarch64-unknown-linux-musl
             binary: smart-forward
             archive: smart-forward-linux-aarch64-musl.tar.gz
-            
-          - os: ubuntu-latest
-            platform: linux-armv7-musl
-            target: armv7-unknown-linux-musleabihf
-            binary: smart-forward
-            archive: smart-forward-linux-armv7-musl.tar.gz
 
     steps:
       - name: 检出代码
@@ -105,18 +99,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y musl-tools gcc-aarch64-linux-gnu
+          # 设置musl交叉编译器
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          # 设置C编译器标志用于musl静态链接
           echo "CC_aarch64_unknown_linux_musl=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS=-C linker=aarch64-linux-gnu-gcc -C target-feature=+crt-static" >> $GITHUB_ENV
-           
-      - name: 安装musl交叉编译工具 (Linux ARMv7 musl)
-        if: matrix.platform == 'linux-armv7-musl'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y musl-tools gcc-arm-linux-gnueabihf
-          echo "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER=arm-linux-gnueabihf-gcc" >> $GITHUB_ENV
-          echo "CC_armv7_unknown_linux_musleabihf=arm-linux-gnueabihf-gcc" >> $GITHUB_ENV
-          echo "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_RUSTFLAGS=-C linker=arm-linux-gnueabihf-gcc -C target-feature=+crt-static" >> $GITHUB_ENV
 
       - name: 构建二进制 (Unix - 优化musl静态链接)
         if: matrix.os != 'windows-latest'
@@ -172,19 +159,30 @@ jobs:
           $distPath = "dist"
           if (-not (Test-Path $distPath)) {
               New-Item -ItemType Directory -Force -Path $distPath | Out-Null
+              Write-Host "✅ Directory created: $distPath"
+          } else {
+              Write-Host "✅ Directory already exists: $distPath"
           }
           
           Write-Host "Copying binary file..."
           $binaryPath = "target/${{ matrix.target }}/release/${{ matrix.binary }}"
+          if (-not (Test-Path $binaryPath)) {
+              Write-Host "❌ Error: Binary file not found: $binaryPath"
+              exit 1
+          }
           Copy-Item $binaryPath "dist/"
           
           Write-Host "Copying configuration files..."
           if (Test-Path "config.yaml.example") {
               Copy-Item "config.yaml.example" "dist/config.yaml"
+          } else {
+              Write-Host "⚠️ Warning: config.yaml.example not found"
           }
           
           if (Test-Path "README.md") {
               Copy-Item "README.md" "dist/"
+          } else {
+              Write-Host "⚠️ Warning: README.md not found"
           }
           
           Write-Host "Package contents:"
@@ -193,6 +191,9 @@ jobs:
           Write-Host "Creating archive..."
           $archivePath = "${{ matrix.archive }}"
           Compress-Archive -Path "dist/*" -DestinationPath $archivePath -Force
+          
+          Write-Host "Archive details:"
+          Get-Item $archivePath | Format-Table
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
@@ -201,7 +202,7 @@ jobs:
           path: ${{ matrix.archive }}
           retention-days: 7
 
-  # 2️⃣ Docker多架构镜像构建
+  # 2️⃣ 基于编译好的musl二进制构建多架构Docker
   build-docker:
     name: 🐳 多架构Docker镜像构建 (Alpine)
     runs-on: ubuntu-latest
@@ -264,7 +265,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./docker/Dockerfile
+          file: ./docker/Dockerfile.alpine
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
@@ -272,6 +273,8 @@ jobs:
             ghcr.io/${{ github.repository }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-contexts: |
+            binaries=./binaries
 
   # 3️⃣ 自动发布
   create-release:
@@ -316,7 +319,6 @@ jobs:
             - **Linux ARM64 (GNU)**: `smart-forward-linux-aarch64-gnu.tar.gz`  
             - **Linux x86_64 (musl)**: `smart-forward-linux-x86_64-musl.tar.gz` 🔥
             - **Linux ARM64 (musl)**: `smart-forward-linux-aarch64-musl.tar.gz` 🔥
-            - **Linux ARMv7 (musl)**: `smart-forward-linux-armv7-musl.tar.gz` 🔥 (OpenWrt兼容)
             
             ## 🐳 多架构Docker镜像 (Alpine 3.18 + musl - 仅15MB)
             支持 `linux/amd64` 和 `linux/arm64` 架构
