@@ -183,12 +183,44 @@ impl NftablesManager {
         Ok(())
     }
 
+    fn detect_ip_version(target_addr: &str) -> &'static str {
+        let target_parts: Vec<&str> = target_addr.split(':').collect();
+        let target_ip = target_parts[0];
+        
+        // IPv6地址检测规则：
+        // 1. 包含 :: (IPv6压缩格式)
+        // 2. 包含 [ ] (IPv6端口格式)
+        // 3. 超过2个冒号 (完整IPv6格式)
+        if target_ip.contains("::") || target_ip.contains('[') || target_parts.len() > 2 {
+            "ip6"
+        } else {
+            "ip"
+        }
+    }
+
     fn generate_dnat_rule(&self, rule: &FirewallRule) -> Vec<String> {
         let target_parts: Vec<&str> = rule.target_addr.split(':').collect();
         let target_ip = target_parts[0];
         let port_str = rule.listen_port.to_string();
         let port_str_ref = port_str.as_str();
         let target_port = target_parts.get(1).unwrap_or(&port_str_ref);
+
+        // 动态检测IP版本
+        let ip_version = Self::detect_ip_version(&rule.target_addr);
+
+        // 处理IPv6地址格式
+        let formatted_target = if ip_version == "ip6" {
+            if target_ip.starts_with('[') {
+                // 已经是 [IPv6]:port 格式
+                rule.target_addr.clone()
+            } else {
+                // 转换为 [IPv6]:port 格式
+                format!("[{}]:{}", target_ip, target_port)
+            }
+        } else {
+            // IPv4格式
+            format!("{}:{}", target_ip, target_port)
+        };
 
         vec![
             "add".to_string(),
@@ -200,9 +232,9 @@ impl NftablesManager {
             "dport".to_string(),
             rule.listen_port.to_string(),
             "dnat".to_string(),
-            "ip".to_string(),
+            ip_version.to_string(),
             "to".to_string(),
-            format!("{}:{}", target_ip, target_port),
+            formatted_target,
         ]
     }
 
@@ -821,4 +853,27 @@ pub fn detect_firewall_backend() -> FirewallBackend {
 
     warn!("未检测到支持的防火墙后端，默认使用nftables");
     FirewallBackend::Nftables
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ip_version_detection() {
+        // IPv4测试
+        assert_eq!(NftablesManager::detect_ip_version("192.168.1.1:80"), "ip");
+        assert_eq!(NftablesManager::detect_ip_version("121.40.167.222:443"), "ip");
+        assert_eq!(NftablesManager::detect_ip_version("10.0.0.1"), "ip");
+        
+        // IPv6测试
+        assert_eq!(NftablesManager::detect_ip_version("2001:db8::1:80"), "ip6");
+        assert_eq!(NftablesManager::detect_ip_version("[2001:db8::1]:80"), "ip6");
+        assert_eq!(NftablesManager::detect_ip_version("fe80::1"), "ip6");
+        assert_eq!(NftablesManager::detect_ip_version("2001:0db8:85a3:0000:0000:8a2e:0370:7334:443"), "ip6");
+        
+        // 边界情况
+        assert_eq!(NftablesManager::detect_ip_version("::1"), "ip6");
+        assert_eq!(NftablesManager::detect_ip_version("::"), "ip6");
+    }
 }
