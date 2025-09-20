@@ -37,10 +37,12 @@ RUN cargo build --release --target x86_64-unknown-linux-musl && \
 # ===== 运行时镜像 - 使用Ubuntu确保兼容性 =====
 FROM ubuntu:22.04
 
-# 安装运行时依赖
+# 安装运行时依赖（包含防火墙工具）
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     tzdata \
+    iptables \
+    nftables \
     && rm -rf /var/lib/apt/lists/* \
     && useradd -r -s /bin/false smartforward
 
@@ -49,8 +51,8 @@ WORKDIR /app
 # 复制静态链接的二进制文件
 COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/smart-forward /usr/local/bin/smart-forward
 
-# 创建测试配置（使用高端口避免权限问题）
-RUN printf 'logging:\n  level: "info"\n  format: "text"\nnetwork:\n  listen_addr: "0.0.0.0"\nbuffer_size: 8192\nrules:\n  - name: "HTTP_TEST"\n    listen_port: 8080\n    protocol: "tcp"\n    targets:\n      - "httpbin.org:80"\n  - name: "DNS_TEST"\n    listen_port: 8053\n    protocol: "tcp"\n    targets:\n      - "1.1.1.1:53"\n' > /app/config.yaml && \
+# 创建测试配置（支持内核态转发）
+RUN printf 'logging:\n  level: "info"\n  format: "text"\nnetwork:\n  listen_addr: "0.0.0.0"\nbuffer_size: 8192\nrules:\n  - name: "HTTP_TEST"\n    listen_port: 8080\n    protocol: "tcp"\n    targets:\n      - "httpbin.org:80"\n  - name: "DNS_TEST"\n    listen_port: 8053\n    protocol: "tcp"\n    targets:\n      - "1.1.1.1:53"\n  - name: "KERNEL_TEST"\n    listen_port: 9090\n    protocol: "tcp"\n    targets:\n      - "example.com:80"\n' > /app/config.yaml && \
     mkdir -p /app/logs && \
     chown -R smartforward:smartforward /app && \
     chmod +x /usr/local/bin/smart-forward

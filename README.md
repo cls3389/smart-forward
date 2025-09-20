@@ -23,15 +23,25 @@
 
 #### 📦 一键安装 (Linux)
 ```bash
-# 推荐：musl 版本 (零依赖)
+# 通用Linux发行版 (推荐：musl 版本，零依赖)
 curl -fsSL https://raw.githubusercontent.com/cls3389/smart-forward/main/scripts/linux-install.sh | bash
+
+# OpenWrt专用安装 (支持内核态转发)
+curl -fsSL https://raw.githubusercontent.com/cls3389/smart-forward/main/scripts/openwrt-install.sh | bash
 ```
 
 #### 🐳 Docker 运行
 ```bash
+# 用户态转发 (跨平台)
 docker run -d --name smart-forward --network host \
   -v $(pwd)/config.yaml:/app/config.yaml:ro \
   ghcr.io/cls3389/smart-forward:latest
+
+# 内核态转发 (Linux，需要特权模式)
+docker run -d --name smart-forward --privileged --network host \
+  -v $(pwd)/config.yaml:/app/config.yaml:ro \
+  ghcr.io/cls3389/smart-forward:latest \
+  --kernel-mode --firewall-backend auto
 ```
 
 #### 💾 手动下载
@@ -69,8 +79,16 @@ rules:
 ### 3. 运行
 
 ```bash
-# Linux/macOS
+# Linux/macOS (用户态转发)
 ./smart-forward
+
+# Linux 内核态转发 (高性能)
+sudo ./smart-forward --kernel-mode --firewall-backend auto
+
+# OpenWrt 服务管理
+/etc/init.d/smart-forward start    # 启动服务
+/etc/init.d/smart-forward status   # 查看状态
+/etc/init.d/smart-forward enable_kernel_mode  # 启用内核态
 
 # Windows
 smart-forward.exe

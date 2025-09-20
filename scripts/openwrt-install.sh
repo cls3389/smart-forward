@@ -1,376 +1,255 @@
-#!/bin/sh
-# OpenWrt 安装脚本
-# 用于在 MT7981 等 OpenWrt 设备上安装和运行 smart-forward
-# 
-# 使用方法:
-#   ./openwrt-install.sh                     # 默认安装musl版本 (推荐)
-#   BINARY_TYPE=gnu ./openwrt-install.sh     # 安装GNU版本
-#   BINARY_TYPE=musl ./openwrt-install.sh    # 明确指定musl版本
-#
-# 二进制类型说明:
-#   musl: 静态链接，零依赖，兼容所有OpenWrt设备 (推荐)
-#   gnu:  动态链接，性能稍好，需要glibc 2.17+
+#!/bin/bash
+
+# Smart Forward OpenWrt 一键安装脚本
+# 支持自动检测架构和内核态转发
 
 set -e
 
-# 配置变量
-APP_NAME="smart-forward"
-APP_VERSION="latest"
-APP_URL="https://github.com/cls3389/smart-forward/releases/latest/download"
-CONFIG_DIR="/etc/smart-forward"
-LOG_DIR="/var/log/smart-forward"
-BIN_DIR="/usr/local/bin"
+REPO_URL="https://github.com/cls3389/smart-forward"
+RELEASE_API="https://api.github.com/repos/cls3389/smart-forward/releases/latest"
 
-# 二进制类型选择 (可通过环境变量修改)
-# musl: 静态链接，更好兼容性，推荐用于OpenWrt (默认)
-# gnu:  动态链接，需要glibc，性能稍好
-BINARY_TYPE="${BINARY_TYPE:-musl}"
+echo "🚀 Smart Forward OpenWrt 一键安装脚本"
+echo "============================================="
 
-# 颜色输出
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+# 检查是否为OpenWrt
+if [ ! -f "/etc/openwrt_release" ]; then
+    echo "❌ 此脚本仅适用于OpenWrt系统"
+    exit 1
+fi
 
-# 打印函数
-print_info() {
-    echo -e "${GREEN}[INFO]${NC} $1"
-}
+# 显示OpenWrt信息
+echo "📋 OpenWrt 系统信息:"
+cat /etc/openwrt_release
+echo ""
 
-print_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
+# 检查网络连接
+echo "🌐 检查网络连接..."
+if ! ping -c 1 github.com >/dev/null 2>&1; then
+    echo "❌ 网络连接失败，请检查网络设置"
+    exit 1
+fi
+echo "✅ 网络连接正常"
 
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-# 检查架构
-check_architecture() {
-    local arch=$(uname -m)
-    case $arch in
-        aarch64|arm64)
-            ARCH="linux-aarch64"
-            print_info "检测到架构: $arch -> $ARCH (ARM 64位)"
-            ;;
-        x86_64|amd64)
-            ARCH="linux-x86_64"
-            print_info "检测到架构: $arch -> $ARCH (x86 64位)"
-            ;;
-        armv7l|armv7)
-            ARCH="linux-armv7"
-            print_warn "检测到架构: $arch -> $ARCH (ARM 32位，性能较低)"
-            print_warn "建议使用 aarch64 设备以获得更好性能"
-            ;;
-        mips|mipsel)
-            ARCH="linux-mips"
-            print_warn "检测到架构: $arch -> $ARCH (MIPS 架构)"
-            print_warn "MIPS 架构可能性能较低"
-            ;;
-        *)
-            print_error "不支持的架构: $arch"
-            print_info "支持的架构: aarch64, x86_64, armv7, mips"
-            exit 1
-            ;;
-    esac
-    
-    # 显示二进制类型信息
-    if [ "$BINARY_TYPE" = "musl" ]; then
-        print_info "二进制类型: musl (静态链接，推荐用于OpenWrt)"
-    elif [ "$BINARY_TYPE" = "gnu" ]; then
-        print_info "二进制类型: GNU (动态链接，需要glibc 2.17+)"
-    else
-        print_error "不支持的二进制类型: $BINARY_TYPE"
-        print_info "支持的类型: musl, gnu"
+# 检测架构
+echo "🔍 检测系统架构..."
+ARCH=$(uname -m)
+case "$ARCH" in
+    "x86_64")
+        TARGET="x86_64-unknown-linux-musl"
+        ;;
+    "aarch64")
+        TARGET="aarch64-unknown-linux-musl"
+        ;;
+    "armv7l"|"armv6l")
+        TARGET="arm-unknown-linux-musleabihf"
+        ;;
+    "mips")
+        TARGET="mips-unknown-linux-musl"
+        ;;
+    "mipsel")
+        TARGET="mipsel-unknown-linux-musl"
+        ;;
+    *)
+        echo "❌ 不支持的架构: $ARCH"
+        echo "支持的架构: x86_64, aarch64, armv7l, mips, mipsel"
         exit 1
-    fi
-}
+        ;;
+esac
 
-# 检查依赖
-check_dependencies() {
-    print_info "检查依赖..."
-    
-    # 检查 wget 或 curl
-    if command -v wget >/dev/null 2>&1; then
-        DOWNLOAD_CMD="wget -O"
-    elif command -v curl >/dev/null 2>&1; then
-        DOWNLOAD_CMD="curl -L -o"
-    else
-        print_error "需要 wget 或 curl 来下载文件"
-        print_info "安装命令: opkg update && opkg install wget"
-        exit 1
-    fi
-    
-    # 检查 tar
-    if ! command -v tar >/dev/null 2>&1; then
-        print_error "需要 tar 来解压文件"
-        print_info "安装命令: opkg update && opkg install tar"
-        exit 1
-    fi
-    
-    print_info "依赖检查通过"
-}
+echo "✅ 检测到架构: $ARCH -> $TARGET"
 
-# 下载二进制文件
-download_binary() {
-    print_info "下载 $APP_NAME 二进制文件..."
-    
-    # 根据架构和二进制类型选择正确的文件名 (匹配GitHub Release命名)
-    local file_suffix
-    case "$ARCH" in
-        "linux-aarch64")
-            file_suffix="linux-aarch64-$BINARY_TYPE.tar.gz"
-            ;;
-        "linux-x86_64")
-            file_suffix="linux-x86_64-$BINARY_TYPE.tar.gz"
-            ;;
-        "linux-armv7")
-            # ARM32位暂时不支持，使用ARMv7的musl版本（如果有）
-            print_warn "ARM32位架构暂不提供预编译版本"
-            print_warn "将尝试使用aarch64版本，可能不兼容"
-            file_suffix="linux-aarch64-$BINARY_TYPE.tar.gz"
-            ;;
-        "linux-mips")
-            # MIPS架构不提供预编译版本
-            print_warn "MIPS架构暂不提供预编译版本"
-            print_warn "将尝试使用x86_64版本，可能不兼容"
-            file_suffix="linux-x86_64-$BINARY_TYPE.tar.gz"
-            ;;
-        *)
-            print_error "不支持的架构: $ARCH"
-            exit 1
-            ;;
-    esac
-    
-    local download_url="$APP_URL/smart-forward-$file_suffix"
-    local temp_file="/tmp/smart-forward-$file_suffix"
-    
-    print_info "下载地址: $download_url"
-    
-    # 下载文件
-    if $DOWNLOAD_CMD "$temp_file" "$download_url"; then
-        print_info "下载成功"
-    else
-        print_error "下载失败，请检查网络连接或GitHub Release是否存在"
-        print_info "手动下载: https://github.com/cls3389/smart-forward/releases/latest"
-        exit 1
-    fi
-    
-    # 解压文件 (GitHub Release中的tar.gz已经是正确格式)
-    print_info "解压文件..."
-    cd /tmp
-    if tar -xzf "$temp_file"; then
-        print_info "解压成功"
-    else
-        print_error "解压失败，文件可能损坏"
-        exit 1
-    fi
-    
-    # 查找二进制文件 (解压后可能在当前目录或子目录)
-    local binary_file="/tmp/smart-forward"
-    if [ ! -f "$binary_file" ]; then
-        # 尝试在解压目录中查找
-        binary_file=$(find /tmp -name "smart-forward" -type f 2>/dev/null | head -1)
-        if [ -z "$binary_file" ]; then
-            print_error "找不到二进制文件"
-            print_info "解压内容:"
-            ls -la /tmp/ | grep -E "(smart|forward)"
-            exit 1
-        fi
-    fi
-    
-    # 安装二进制文件
-    print_info "安装二进制文件到 $BIN_DIR..."
-    mkdir -p "$BIN_DIR"
-    cp "$binary_file" "$BIN_DIR/smart-forward"
-    chmod +x "$BIN_DIR/smart-forward"
-    
-    # 验证安装
-    if "$BIN_DIR/smart-forward" --version >/dev/null 2>&1; then
-        print_info "二进制文件安装完成并验证成功"
-    else
-        print_warn "二进制文件已安装，但版本验证失败（可能是架构不兼容）"
-    fi
-    
-    # 清理临时文件
-    rm -f "$temp_file"
-    [ -f "$binary_file" ] && rm -f "$binary_file"
-    
-    print_info "二进制文件安装完成"
-}
+# 检测防火墙后端
+echo "🔍 检测防火墙后端..."
+HAS_NFTABLES=false
+HAS_IPTABLES=false
 
-# 创建配置目录和文件
-create_config() {
-    print_info "创建配置目录和文件..."
-    
-    # 创建目录
-    mkdir -p "$CONFIG_DIR"
-    mkdir -p "$LOG_DIR"
-    
-    # 创建配置文件
-    cat > "$CONFIG_DIR/config.yaml" << 'EOF'
-# ================================
-# 智能网络转发器配置文件
-# ================================
+if command -v nft >/dev/null 2>&1; then
+    echo "✅ 检测到nftables支持 (Firewall4)"
+    HAS_NFTABLES=true
+fi
 
-# 日志配置
+if command -v iptables >/dev/null 2>&1; then
+    echo "✅ 检测到iptables支持"
+    HAS_IPTABLES=true
+fi
+
+if [ "$HAS_NFTABLES" = true ]; then
+    FIREWALL_TYPE="nftables (Firewall4 - 推荐)"
+elif [ "$HAS_IPTABLES" = true ]; then
+    FIREWALL_TYPE="iptables (传统防火墙)"
+else
+    FIREWALL_TYPE="无防火墙后端 (仅用户态转发)"
+fi
+
+echo "🎯 防火墙后端: $FIREWALL_TYPE"
+
+# 获取最新版本
+echo "📥 获取最新版本信息..."
+LATEST_VERSION=$(curl -s "$RELEASE_API" | grep '"tag_name"' | cut -d'"' -f4)
+if [ -z "$LATEST_VERSION" ]; then
+    echo "❌ 获取版本信息失败"
+    exit 1
+fi
+echo "✅ 最新版本: $LATEST_VERSION"
+
+# 构建下载URL
+BINARY_NAME="smart-forward"
+DOWNLOAD_URL="$REPO_URL/releases/download/$LATEST_VERSION/smart-forward-$TARGET"
+
+echo "📥 下载二进制文件..."
+echo "URL: $DOWNLOAD_URL"
+
+# 下载到临时目录
+TMP_DIR="/tmp/smart-forward-install"
+mkdir -p "$TMP_DIR"
+cd "$TMP_DIR"
+
+if ! curl -L -o "$BINARY_NAME" "$DOWNLOAD_URL"; then
+    echo "❌ 下载失败，请检查网络或版本是否支持当前架构"
+    exit 1
+fi
+
+# 验证下载
+if [ ! -f "$BINARY_NAME" ] || [ ! -s "$BINARY_NAME" ]; then
+    echo "❌ 下载的文件无效"
+    exit 1
+fi
+
+echo "✅ 下载完成"
+
+# 安装二进制文件
+echo "📦 安装二进制文件..."
+chmod +x "$BINARY_NAME"
+mv "$BINARY_NAME" /usr/local/bin/smart-forward
+
+# 创建配置目录
+echo "📁 创建配置目录..."
+mkdir -p /etc/smart-forward
+
+# 创建默认配置
+if [ ! -f "/etc/smart-forward/config.yaml" ]; then
+    echo "📝 创建默认配置..."
+    cat > /etc/smart-forward/config.yaml << 'EOF'
+# Smart Forward OpenWrt 配置
 logging:
   level: "info"
   format: "text"
 
-# 网络配置  
 network:
   listen_addr: "0.0.0.0"
 
-# 缓冲区大小
-buffer_size: 8192
-
-# 转发规则
+# 转发规则示例
 rules:
-  - name: "HTTPS转发示例"
-    listen_port: 443
+  - name: "Web"
+    listen_port: 8080
     protocol: "tcp"
     targets:
-      - "example.com:443"
+      - "192.168.1.100:80"
+      - "backup.example.com:80"
       
-  - name: "HTTP转发示例"
-    listen_port: 80
+  - name: "SSH"
+    listen_port: 2222
     protocol: "tcp"
     targets:
-      - "example.com:80"
-      
-  # 添加更多规则...
+      - "192.168.1.200:22"
 EOF
-    
-    print_info "配置文件创建完成: $CONFIG_DIR/config.yaml"
-}
+    echo "✅ 默认配置已创建: /etc/smart-forward/config.yaml"
+else
+    echo "⚠️  配置文件已存在，跳过创建"
+fi
 
-# 创建启动脚本
-create_startup_script() {
-    print_info "创建启动脚本..."
-    
-    cat > "/etc/init.d/smart-forward" << 'EOF'
+# 下载并安装服务脚本
+echo "🔧 安装服务脚本..."
+SERVICE_SCRIPT_URL="$REPO_URL/raw/main/scripts/openwrt-service.sh"
+if curl -s -L -o /etc/init.d/smart-forward "$SERVICE_SCRIPT_URL"; then
+    chmod +x /etc/init.d/smart-forward
+    echo "✅ 服务脚本安装完成"
+else
+    echo "⚠️  服务脚本下载失败，手动创建基础版本"
+    # 创建基础服务脚本
+    cat > /etc/init.d/smart-forward << 'EOF'
 #!/bin/sh /etc/rc.common
 
+NAME=smart-forward
+USE_PROCD=1
 START=99
 STOP=10
 
-USE_PROCD=1
-PROG="/usr/local/bin/smart-forward"
-CONFIG="/etc/smart-forward/config.yaml"
-
 start_service() {
+    local BIN="/usr/local/bin/smart-forward"
+    local CONF="/etc/smart-forward/config.yaml"
+    
     procd_open_instance
-    procd_set_param command "$PROG" -c "$CONFIG"
-    procd_set_param respawn
-    procd_set_param stdout 1
-    procd_set_param stderr 1
+    procd_set_param command "$BIN" -c "$CONF"
+    procd_set_param cwd /etc/smart-forward
+    procd_set_param respawn 3600 5 5
+    procd_set_param file "$CONF"
     procd_close_instance
 }
 EOF
-    
-    chmod +x "/etc/init.d/smart-forward"
-    
-    print_info "启动脚本创建完成"
-}
+    chmod +x /etc/init.d/smart-forward
+fi
 
-# 创建管理脚本
-create_management_script() {
-    print_info "创建管理脚本..."
-    
-    cat > "/usr/local/bin/smart-forward-ctl" << 'EOF'
-#!/bin/sh
-# Smart Forward 管理脚本
-
-case "$1" in
-    start)
-        /etc/init.d/smart-forward start
-        ;;
-    stop)
-        /etc/init.d/smart-forward stop
-        ;;
-    restart)
-        /etc/init.d/smart-forward restart
-        ;;
-    status)
-        /etc/init.d/smart-forward status
-        ;;
-    logs)
-        tail -f /var/log/smart-forward/smart-forward.log
-        ;;
-    config)
-        vi /etc/smart-forward/config.yaml
-        ;;
-    *)
-        echo "用法: $0 {start|stop|restart|status|logs|config}"
-        exit 1
-        ;;
-esac
-EOF
-    
-    chmod +x "/usr/local/bin/smart-forward-ctl"
-    
-    print_info "管理脚本创建完成"
-}
-
-# 启动服务
-start_service() {
-    print_info "启动服务..."
-    
-    # 启用服务
-    /etc/init.d/smart-forward enable
-    
-    # 启动服务
-    /etc/init.d/smart-forward start
-    
-    # 等待服务启动
-    sleep 2
-    
-    # 检查服务状态
-    if /etc/init.d/smart-forward status >/dev/null 2>&1; then
-        print_info "服务启动成功"
+# 询问是否启用内核态转发
+echo ""
+echo "🚀 内核态转发配置"
+echo "============================================="
+if [ "$HAS_NFTABLES" = true ] || [ "$HAS_IPTABLES" = true ]; then
+    echo "检测到防火墙支持，可以启用内核态转发获得更好性能"
+    echo "内核态转发优势："
+    echo "  ✅ 更低延迟"
+    echo "  ✅ 更高吞吐量" 
+    echo "  ✅ 更少CPU占用"
+    echo ""
+    read -p "是否启用内核态转发? [Y/n]: " -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
+        touch /etc/smart-forward/kernel-mode
+        echo "✅ 内核态转发已启用"
     else
-        print_error "服务启动失败"
-        print_info "查看日志: smart-forward-ctl logs"
-        exit 1
+        echo "📡 将使用用户态转发"
     fi
-}
+else
+    echo "⚠️  未检测到防火墙后端，将使用用户态转发"
+fi
 
-# 显示使用说明
-show_usage() {
-    print_info "安装完成！"
-    echo ""
-    echo "管理命令："
-    echo "  启动服务: smart-forward-ctl start"
-    echo "  停止服务: smart-forward-ctl stop"
-    echo "  重启服务: smart-forward-ctl restart"
-    echo "  查看状态: smart-forward-ctl status"
-    echo "  查看日志: smart-forward-ctl logs"
-    echo "  编辑配置: smart-forward-ctl config"
-    echo ""
-    echo "配置文件: $CONFIG_DIR/config.yaml"
-    echo "日志文件: $LOG_DIR/smart-forward.log"
-    echo ""
-    echo "请编辑配置文件后重启服务："
-    echo "  smart-forward-ctl config"
-    echo "  smart-forward-ctl restart"
-}
+# 询问是否开机自启
+echo ""
+read -p "是否设置开机自启? [Y/n]: " -n 1 -r
+echo ""
+if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
+    /etc/init.d/smart-forward enable
+    echo "✅ 开机自启已启用"
+else
+    echo "⚠️  开机自启未启用"
+fi
 
-# 主函数
-main() {
-    print_info "开始安装 $APP_NAME..."
-    
-    check_architecture
-    check_dependencies
-    download_binary
-    create_config
-    create_startup_script
-    create_management_script
-    start_service
-    show_usage
-    
-    print_info "安装完成！"
-}
+# 询问是否立即启动
+echo ""
+read -p "是否立即启动服务? [Y/n]: " -n 1 -r
+echo ""
+if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
+    /etc/init.d/smart-forward start
+    echo "🎉 服务启动完成！"
+else
+    echo "⚠️  服务未启动，可手动启动: /etc/init.d/smart-forward start"
+fi
 
-# 运行主函数
-main "$@"
+# 清理临时文件
+cd /
+rm -rf "$TMP_DIR"
+
+echo ""
+echo "🎉 Smart Forward 安装完成！"
+echo "============================================="
+echo "📁 配置文件: /etc/smart-forward/config.yaml"
+echo "🔧 服务管理: /etc/init.d/smart-forward {start|stop|restart|status}"
+echo "📊 查看状态: /etc/init.d/smart-forward status"
+echo "📝 查看日志: logread | grep smart-forward"
+echo ""
+echo "🚀 内核态转发管理:"
+echo "  启用: /etc/init.d/smart-forward enable_kernel_mode"
+echo "  禁用: /etc/init.d/smart-forward disable_kernel_mode"
+echo ""
+echo "📖 项目地址: $REPO_URL"
+echo "🎯 请编辑配置文件后重启服务以生效"

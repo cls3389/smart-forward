@@ -73,8 +73,22 @@ check_root() {
 detect_system() {
     print_step "检测系统信息..."
     
-    # 检测操作系统
-    if [[ -f /etc/os-release ]]; then
+    # 检测是否为OpenWrt
+    if [[ -f /etc/openwrt_release ]]; then
+        print_info "检测到OpenWrt系统"
+        print_warn "OpenWrt系统建议使用专用安装脚本："
+        print_info "curl -fsSL https://raw.githubusercontent.com/cls3389/smart-forward/main/scripts/openwrt-install.sh | bash"
+        echo ""
+        read -p "是否继续使用通用Linux安装脚本? [y/N]: " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_info "退出安装，请使用OpenWrt专用脚本"
+            exit 0
+        fi
+        OS_NAME="OpenWrt"
+        OS_VERSION=$(grep DISTRIB_RELEASE /etc/openwrt_release | cut -d"'" -f2)
+    # 检测其他Linux发行版
+    elif [[ -f /etc/os-release ]]; then
         . /etc/os-release
         OS_NAME=$NAME
         OS_VERSION=$VERSION_ID

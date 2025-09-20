@@ -1,0 +1,82 @@
+# Docker Compose - 内核态转发支持版本
+version: '3.8'
+
+services:
+  smart-forward:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: smart-forward-kernel
+    restart: unless-stopped
+    
+    # 内核态转发需要特权模式
+    privileged: true
+    
+    # 网络模式：host模式以支持内核态转发
+    network_mode: host
+    
+    # 挂载配置文件
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./logs:/app/logs
+    
+    # 环境变量
+    environment:
+      - RUST_LOG=info
+      - TZ=Asia/Shanghai
+    
+    # 启动命令：启用内核态转发
+    command: [
+      "/usr/local/bin/smart-forward",
+      "-c", "/app/config.yaml",
+      "--kernel-mode",
+      "--firewall-backend", "auto"
+    ]
+    
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "pgrep", "smart-forward"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # 用户态转发版本（兼容性）
+  smart-forward-userspace:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: smart-forward-userspace
+    restart: unless-stopped
+    
+    # 用户态转发使用普通权限
+    ports:
+      - "8080:8080"
+      - "8053:8053"
+      - "9090:9090"
+    
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./logs:/app/logs
+    
+    environment:
+      - RUST_LOG=info
+      - TZ=Asia/Shanghai
+    
+    # 启动命令：用户态转发
+    command: [
+      "/usr/local/bin/smart-forward",
+      "-c", "/app/config.yaml"
+    ]
+    
+    healthcheck:
+      test: ["CMD", "pgrep", "smart-forward"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+# 创建日志目录
+volumes:
+  logs:
+    driver: local

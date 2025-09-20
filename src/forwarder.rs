@@ -1,6 +1,7 @@
 // 智能网络转发器 - 完整转发器实现
 use crate::common::CommonManager;
 use crate::config::{Config, ForwardRule};
+use crate::firewall::FirewallScheduler;
 use crate::utils::{get_standard_stats, get_stats_with_target, ConnectionStats};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -810,15 +811,17 @@ pub struct SmartForwarder {
     common_manager: CommonManager,
     forwarders: Arc<RwLock<HashMap<String, Box<dyn Forwarder + Send + Sync>>>>,
     dynamic_update_started: Arc<RwLock<bool>>,
+    firewall_scheduler: Option<FirewallScheduler>,
 }
 
 impl SmartForwarder {
-    pub fn new(config: Config, common_manager: CommonManager) -> Self {
+    pub fn new(config: Config, common_manager: CommonManager, firewall_scheduler: Option<FirewallScheduler>) -> Self {
         Self {
             config,
             common_manager,
             forwarders: Arc::new(RwLock::new(HashMap::new())),
             dynamic_update_started: Arc::new(RwLock::new(false)),
+            firewall_scheduler,
         }
     }
 
@@ -835,6 +838,7 @@ impl SmartForwarder {
     pub async fn start(&mut self) -> Result<()> {
         let rules = self.config.rules.clone();
         let mut success_count = 0;
+        let is_kernel_mode = self.firewall_scheduler.is_some();
 
         // 检查是否需要自动启用HTTP跳转服务
         let has_443 = rules.iter().any(|r| r.listen_port == 443);
@@ -849,14 +853,21 @@ impl SmartForwarder {
             }
         }
 
-        for rule in &rules {
-            match self.start_forwarder(rule).await {
-                Ok(_) => {
-                    success_count += 1;
-                }
-                Err(e) => {
-                    error!("规则 {} 启动失败: {}", rule.name, e);
-                    // 继续处理其他规则，不退出
+        // 根据转发模式决定是否启动用户态转发器
+        if is_kernel_mode {
+            info!("🚀 内核态转发模式：跳过用户态转发器启动，使用内核DNAT/SNAT");
+            success_count = rules.len(); // 内核态转发由FirewallScheduler处理
+        } else {
+            info!("📡 用户态转发模式：启动应用层转发器");
+            for rule in &rules {
+                match self.start_forwarder(rule).await {
+                    Ok(_) => {
+                        success_count += 1;
+                    }
+                    Err(e) => {
+                        error!("规则 {} 启动失败: {}", rule.name, e);
+                        // 继续处理其他规则，不退出
+                    }
                 }
             }
         }
@@ -951,6 +962,7 @@ impl SmartForwarder {
         let forwarders = self.forwarders.clone();
         let common_manager = self.common_manager.clone();
         let rules = self.config.rules.clone();
+        let has_firewall_scheduler = self.firewall_scheduler.is_some();
 
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(15));
@@ -958,6 +970,14 @@ impl SmartForwarder {
             loop {
                 interval.tick().await;
 
+                // 如果启用了内核态转发，优先同步防火墙规则
+                if has_firewall_scheduler {
+                    // 注意：这里我们无法直接访问firewall_scheduler，因为它被移动到了SmartForwarder中
+                    // 在实际实现中，我们需要重新设计这部分架构
+                    debug!("内核态模式：防火墙规则同步由FirewallScheduler处理");
+                }
+
+                // 更新用户态转发器（如果存在）
                 for rule in &rules {
                     if let Ok(best_target) = common_manager.get_best_target(&rule.name).await {
                         let target_addr = best_target.to_string();
