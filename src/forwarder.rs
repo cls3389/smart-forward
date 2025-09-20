@@ -815,7 +815,11 @@ pub struct SmartForwarder {
 }
 
 impl SmartForwarder {
-    pub fn new(config: Config, common_manager: CommonManager, firewall_scheduler: Option<FirewallScheduler>) -> Self {
+    pub fn new(
+        config: Config,
+        common_manager: CommonManager,
+        firewall_scheduler: Option<FirewallScheduler>,
+    ) -> Self {
         Self {
             config,
             common_manager,

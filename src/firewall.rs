@@ -118,7 +118,10 @@ impl NftablesManager {
     }
 
     async fn table_exists(&self) -> Result<bool> {
-        match self.execute_nft(&["list", "table", "inet", &self.table_name]).await {
+        match self
+            .execute_nft(&["list", "table", "inet", &self.table_name])
+            .await
+        {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),
         }
@@ -128,21 +131,48 @@ impl NftablesManager {
         info!("创建nftables表和链，优先级高于Firewall4默认规则");
 
         // 创建专用table
-        self.execute_nft(&["add", "table", "inet", &self.table_name]).await?;
+        self.execute_nft(&["add", "table", "inet", &self.table_name])
+            .await?;
         debug!("创建table: {}", self.table_name);
 
         // 创建prerouting chain - 优先级-150，高于Firewall4默认DNAT(-100)
         self.execute_nft(&[
-            "add", "chain", "inet", &self.table_name, &self.chain_prerouting,
-            "{", "type", "nat", "hook", "prerouting", "priority", "-150", ";", "}"
-        ]).await?;
+            "add",
+            "chain",
+            "inet",
+            &self.table_name,
+            &self.chain_prerouting,
+            "{",
+            "type",
+            "nat",
+            "hook",
+            "prerouting",
+            "priority",
+            "-150",
+            ";",
+            "}",
+        ])
+        .await?;
         info!("创建prerouting链，优先级-150（高于Firewall4默认-100）");
 
         // 创建postrouting chain - 优先级50，低于默认SNAT(100)但足够用
         self.execute_nft(&[
-            "add", "chain", "inet", &self.table_name, &self.chain_postrouting,
-            "{", "type", "nat", "hook", "postrouting", "priority", "50", ";", "}"
-        ]).await?;
+            "add",
+            "chain",
+            "inet",
+            &self.table_name,
+            &self.chain_postrouting,
+            "{",
+            "type",
+            "nat",
+            "hook",
+            "postrouting",
+            "priority",
+            "50",
+            ";",
+            "}",
+        ])
+        .await?;
         info!("创建postrouting链，优先级50");
 
         Ok(())
