@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::common::CommonManager;
-use crate::config::{Config, ForwardRule};
+use crate::config::Config;
 
 // ================================
 // 防火墙后端枚举
@@ -25,6 +25,7 @@ pub enum FirewallBackend {
 // 转发类型
 // ================================
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum ForwardType {
     DNAT,
     SNAT,
@@ -34,6 +35,7 @@ pub enum ForwardType {
 // 防火墙规则结构
 // ================================
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct FirewallRule {
     pub rule_id: String,
     pub listen_port: u16,
@@ -77,6 +79,7 @@ impl FirewallRule {
 // 防火墙管理器特征
 // ================================
 #[async_trait]
+#[allow(dead_code)]
 pub trait FirewallManager: Send + Sync {
     async fn initialize(&mut self) -> Result<()>;
     async fn add_forward_rule(&mut self, rule: &FirewallRule) -> Result<()>;
@@ -224,7 +227,7 @@ impl FirewallManager for NftablesManager {
         info!("初始化nftables管理器，针对Firewall4优先级优化");
 
         // 检查nft命令是否可用
-        if let Err(_) = Command::new("nft").arg("--version").output() {
+        if Command::new("nft").arg("--version").output().is_err() {
             return Err(anyhow::anyhow!("nft命令不可用，请确保已安装nftables"));
         }
 
@@ -491,7 +494,7 @@ impl FirewallManager for IptablesManager {
         info!("初始化iptables管理器，针对传统OpenWrt优化");
 
         // 检查iptables命令是否可用
-        if let Err(_) = Command::new("iptables").arg("--version").output() {
+        if Command::new("iptables").arg("--version").output().is_err() {
             return Err(anyhow::anyhow!("iptables命令不可用，请确保已安装iptables"));
         }
 
@@ -661,6 +664,7 @@ pub struct FirewallScheduler {
     rules: Arc<RwLock<HashMap<String, FirewallRule>>>,
 }
 
+#[allow(dead_code)]
 impl FirewallScheduler {
     pub async fn new(
         backend: FirewallBackend,

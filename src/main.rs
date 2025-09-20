@@ -5,10 +5,8 @@ mod forwarder;
 mod utils;
 
 use anyhow::Result;
-use chrono;
 use clap::Parser;
 use log::{info, warn};
-use serde_json;
 use std::path::PathBuf;
 
 use crate::common::CommonManager;
@@ -102,22 +100,25 @@ async fn main() -> Result<()> {
     let is_json = config.logging.format.eq_ignore_ascii_case("json");
     if is_json {
         logger_builder.format(|buf, record| {
+            use chrono::Local;
             use std::io::Write;
-            let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+            let ts = Local::now().format("%Y-%m-%d %H:%M:%S");
+            let message = record.args().to_string();
+            let escaped_message = message.replace('"', "\\\"");
             writeln!(
                 buf,
-                "{{\"timestamp\":\"{}\",\"level\":\"{}\",\"target\":\"{}\",\"message\":{}}}",
+                "{{\"timestamp\":\"{}\",\"level\":\"{}\",\"target\":\"{}\",\"message\":\"{}\"}}",
                 ts,
                 record.level(),
                 record.target(),
-                serde_json::to_string(&record.args().to_string())
-                    .unwrap_or_else(|_| "\"\"".to_string())
+                escaped_message
             )
         });
     } else {
         logger_builder.format(|buf, record| {
+            use chrono::Local;
             use std::io::Write;
-            let beijing_time = chrono::Local::now();
+            let beijing_time = Local::now();
             writeln!(
                 buf,
                 "[{} {} {}] {}",
