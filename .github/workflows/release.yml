@@ -243,11 +243,6 @@ jobs:
           name: smart-forward-linux-aarch64-musl.tar.gz
           path: ./artifacts/aarch64
           
-      - name: 下载Linux ARMv7 musl二进制文件
-        uses: actions/download-artifact@v4
-        with:
-          name: smart-forward-linux-armv7-musl.tar.gz
-          path: ./artifacts/armv7
 
       - name: 准备多架构二进制文件
         run: |
@@ -267,20 +262,11 @@ jobs:
           cp smart-forward ../../binaries/arm64/
           chmod +x ../../binaries/arm64/smart-forward
           
-          echo "解压armv7 musl二进制..."
-          cd ../armv7
-          tar -xzf smart-forward-linux-armv7-musl.tar.gz
-          ls -la
-          mkdir -p ../../binaries/arm
-          cp smart-forward ../../binaries/arm/
-          chmod +x ../../binaries/arm/smart-forward
-          
           echo "验证二进制文件..."
           cd ../../
           ls -la binaries/*/
           file binaries/amd64/smart-forward
           file binaries/arm64/smart-forward
-          file binaries/arm/smart-forward
 
       - name: 设置 Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -297,7 +283,7 @@ jobs:
         with:
           context: .
           file: ./docker/Dockerfile
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ghcr.io/${{ github.repository }}:${{ github.ref_name }}
@@ -353,7 +339,7 @@ jobs:
             - **Linux ARMv7 (musl)**: `smart-forward-linux-armv7-musl.tar.gz` 🔥 (OpenWrt兼容)
             
             ## 🐳 多架构Docker镜像 (Alpine 3.18 + musl - 仅15MB)
-            支持 `linux/amd64`、`linux/arm64` 和 `linux/arm/v7` 架构
+            支持 `linux/amd64` 和 `linux/arm64` 架构
             
             ```bash
             # 拉取最新版本

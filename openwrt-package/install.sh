@@ -59,9 +59,6 @@ detect_arch() {
         armv7l)
             echo "armv7"
             ;;
-        arm*)
-            echo "armv7"
-            ;;
         *)
             print_error "不支持的架构: $arch"
             exit 1
@@ -77,11 +74,7 @@ download_binary() {
     
     case $system in
         openwrt|linux)
-            if [ "$arch" = "armv7" ]; then
-                url="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/smart-forward-linux-armv7-musl.tar.gz"
-            else
-                url="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/smart-forward-linux-${arch}-musl.tar.gz"
-            fi
+            url="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/smart-forward-linux-${arch}-musl.tar.gz"
             ;;
         *)
             print_error "不支持的系统: $system"
