@@ -1,4 +1,4 @@
-# Smart Forward - 智能网络转发器 v1.5.0
+# Smart Forward - 智能网络转发器 v1.5.1
 
 [![🚀 全平台发布](https://github.com/cls3389/smart-forward/actions/workflows/release.yml/badge.svg)](https://github.com/cls3389/smart-forward/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -23,14 +23,20 @@
 
 ### 1. 下载
 
-#### 📦 一键安装 (Linux)
+#### 📦 一键安装 (推荐)
 ```bash
-# 通用Linux发行版 (推荐：musl 版本，零依赖)
-curl -fsSL https://raw.githubusercontent.com/cls3389/smart-forward/main/scripts/linux-install.sh | bash
+# 统一安装脚本 - 自动检测系统类型 (Linux/OpenWrt)
+curl -fsSL https://raw.githubusercontent.com/cls3389/smart-forward/main/install.sh | bash
 
-# OpenWrt专用安装 (支持内核态转发)
-curl -fsSL https://raw.githubusercontent.com/cls3389/smart-forward/main/scripts/openwrt-install.sh | bash
+# 或使用 wget
+wget -qO- https://raw.githubusercontent.com/cls3389/smart-forward/main/install.sh | bash
 ```
+
+**特性**:
+- 🔍 **自动检测**: Linux、OpenWrt、Docker环境
+- 🚀 **优先内核态**: 自动启用内核态转发，智能回退用户态
+- 🌐 **IPv4/IPv6**: 支持现代混合网络环境
+- ⚡ **零配置**: 开箱即用，自动优化
 
 #### 🐳 Docker 运行
 ```bash
@@ -102,12 +108,42 @@ smart-forward.exe
 cd docker && docker-compose up -d
 ```
 
-## 📚 完整文档
+## 📊 日志查看
 
-- 📦 **[安装指南](docs/INSTALLATION.md)** - 所有平台的详细安装说明
+### Linux (systemd)
+```bash
+# 实时日志
+sudo journalctl -u smart-forward -f
+
+# 最近日志
+sudo journalctl -u smart-forward --since "1 hour ago"
+
+# 错误日志
+sudo journalctl -u smart-forward -p err
+```
+
+### OpenWrt (logread)
+```bash
+# 实时日志
+logread -f | grep smart-forward
+
+# 最近日志
+logread | grep smart-forward | tail -20
+
+# 健康检查日志
+logread | grep smart-forward | grep 健康检查
+
+# 错误和警告
+logread | grep smart-forward | grep -E 'ERROR|WARN|错误'
+```
+
+### 运行模式识别
+- **内核态转发**: 日志显示 `🚀 内核态转发模式`，无端口监听，有nftables规则
+- **用户态转发**: 日志显示端口监听，无nftables规则
+
+## 📚 文档
+
 - ⚙️ **[配置指南](docs/CONFIGURATION.md)** - 完整的配置选项和示例
-- 📝 **[使用示例](docs/EXAMPLES.md)** - 实际场景配置案例
-- 🚀 **[部署指南](docs/DEPLOYMENT.md)** - 生产环境部署最佳实践
 - 🔧 **[故障排除](docs/TROUBLESHOOTING.md)** - 常见问题解决方案
 
 ## 📁 项目结构
