@@ -1,5 +1,6 @@
 name: 🚀 全平台发布
 
+# 触发条件: 推送版本标签
 on:
   push:
     tags: ['v*']
@@ -7,129 +8,331 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
 
 jobs:
-  build:
-    name: Build for ${{ matrix.target }}
+  # 1️⃣ 多平台二进制构建
+  build-binaries:
+    name: 🔨 构建 ${{ matrix.platform }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
         include:
-          # Windows
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            name: smart-forward-windows-x64.exe
-          
-          # Linux
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            name: smart-forward-linux-x64
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
-            name: smart-forward-linux-x64-musl
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            name: smart-forward-linux-arm64
-          - target: armv7-unknown-linux-musleabihf
-            os: ubuntu-latest
-            name: smart-forward-linux-armv7
-          
-          # macOS
-          - target: x86_64-apple-darwin
-            os: macos-latest
-            name: smart-forward-macos-x64
-          - target: aarch64-apple-darwin
-            os: macos-latest
-            name: smart-forward-macos-arm64
+          - os: windows-latest
+            platform: windows-x86_64
+            target: x86_64-pc-windows-msvc
+            binary: smart-forward.exe
+            archive: smart-forward-windows-x86_64.zip
+            
+          - os: macos-latest
+            platform: macos-x86_64
+            target: x86_64-apple-darwin
+            binary: smart-forward
+            archive: smart-forward-macos-x86_64.tar.gz
+            
+          - os: macos-latest
+            platform: macos-aarch64
+            target: aarch64-apple-darwin
+            binary: smart-forward
+            archive: smart-forward-macos-aarch64.tar.gz
+            
+          - os: ubuntu-latest
+            platform: linux-x86_64-gnu
+            target: x86_64-unknown-linux-gnu
+            binary: smart-forward
+            archive: smart-forward-linux-x86_64-gnu.tar.gz
+            
+          - os: ubuntu-latest
+            platform: linux-aarch64-gnu
+            target: aarch64-unknown-linux-gnu
+            binary: smart-forward
+            archive: smart-forward-linux-aarch64-gnu.tar.gz
+            
+          - os: ubuntu-latest
+            platform: linux-x86_64-musl
+            target: x86_64-unknown-linux-musl
+            binary: smart-forward
+            archive: smart-forward-linux-x86_64-musl.tar.gz
+            
+          - os: ubuntu-latest
+            platform: linux-aarch64-musl
+            target: aarch64-unknown-linux-musl
+            binary: smart-forward
+            archive: smart-forward-linux-aarch64-musl.tar.gz
+            
+          - os: ubuntu-latest
+            platform: linux-armv7-musl
+            target: armv7-unknown-linux-musleabihf
+            binary: smart-forward
+            archive: smart-forward-linux-armv7-musl.tar.gz
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: 检出代码
+        uses: actions/checkout@v4
 
-    - name: Setup Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        targets: ${{ matrix.target }}
+      - name: 设置 Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
-    - name: Install cross-compilation tools (Linux)
-      if: runner.os == 'Linux'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y gcc-multilib
-        if [[ "${{ matrix.target }}" == *"musl"* ]]; then
+      - name: 缓存依赖
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ matrix.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      # Linux 工具链设置
+      - name: 安装musl工具链 (Linux x86_64 musl)
+        if: matrix.platform == 'linux-x86_64-musl'
+        run: |
+          sudo apt-get update
           sudo apt-get install -y musl-tools
-        fi
-        if [[ "${{ matrix.target }}" == "aarch64"* ]]; then
+          
+      - name: 安装GNU交叉编译工具 (Linux ARM64 gnu)
+        if: matrix.platform == 'linux-aarch64-gnu'
+        run: |
+          sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
-        fi
-        if [[ "${{ matrix.target }}" == "armv7"* ]]; then
-          sudo apt-get install -y gcc-arm-linux-gnueabihf
-        fi
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          
+      - name: 安装musl交叉编译工具 (Linux ARM64 musl)
+        if: matrix.platform == 'linux-aarch64-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools gcc-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CC_aarch64_unknown_linux_musl=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS=-C linker=aarch64-linux-gnu-gcc -C target-feature=+crt-static" >> $GITHUB_ENV
+           
+      - name: 安装musl交叉编译工具 (Linux ARMv7 musl)
+        if: matrix.platform == 'linux-armv7-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools gcc-arm-linux-gnueabihf
+          echo "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER=arm-linux-gnueabihf-gcc" >> $GITHUB_ENV
+          echo "CC_armv7_unknown_linux_musleabihf=arm-linux-gnueabihf-gcc" >> $GITHUB_ENV
+          echo "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_RUSTFLAGS=-C linker=arm-linux-gnueabihf-gcc -C target-feature=+crt-static" >> $GITHUB_ENV
 
-    - name: Cache cargo registry
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
-
-    - name: Build
-      run: |
-        cargo build --release --target ${{ matrix.target }}
-
-    - name: Prepare artifact (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        copy target\${{ matrix.target }}\release\smart-forward.exe ${{ matrix.name }}
-
-    - name: Prepare artifact (Unix)
-      if: runner.os != 'Windows'
-      run: |
-        cp target/${{ matrix.target }}/release/smart-forward ${{ matrix.name }}
-        chmod +x ${{ matrix.name }}
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.name }}
-        path: ${{ matrix.name }}
-
-  release:
-    name: Create Release
-    needs: build
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: artifacts
-
-    - name: Create release archives
-      run: |
-        cd artifacts
-        for dir in */; do
-          if [[ "$dir" == *"windows"* ]]; then
-            cd "$dir" && zip "../${dir%/}.zip" * && cd ..
-          else
-            cd "$dir" && tar -czf "../${dir%/}.tar.gz" * && cd ..
+      - name: 构建二进制 (Unix - 优化musl静态链接)
+        if: matrix.os != 'windows-latest'
+        run: |
+          # 设置musl静态链接优化参数
+          if [[ "${{ matrix.target }}" == *"musl"* ]]; then
+            export RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-s"
+            echo "✅ 启用musl静态链接优化"
           fi
-        done
+          cargo build --release --target ${{ matrix.target }}
+          
+          # 验证二进制文件
+          echo "📦 验证构建的二进制文件:"
+          ls -la target/${{ matrix.target }}/release/
+          file target/${{ matrix.target }}/release/${{ matrix.binary }} || echo "file命令不可用"
+          
+          # 如果是musl目标，进行strip优化
+          if [[ "${{ matrix.target }}" == *"musl"* ]]; then
+            strip target/${{ matrix.target }}/release/${{ matrix.binary }} 2>/dev/null || echo "⚠️ strip失败或不可用"
+            echo "✅ 已优化二进制文件大小"
+          fi
 
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          artifacts/*.zip
-          artifacts/*.tar.gz
-        generate_release_notes: true
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: 构建二进制 (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+          Write-Host "📦 验证构建的二进制文件:"
+          Get-ChildItem target/${{ matrix.target }}/release/ | Format-Table
+
+      - name: 打包 (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          echo "创建打包目录..."
+          mkdir -p dist
+          echo "复制二进制文件..."
+          cp target/${{ matrix.target }}/release/${{ matrix.binary }} dist/
+          echo "复制配置文件..."
+          cp config.yaml.example dist/config.yaml
+          cp README.md dist/
+          echo "打包内容:"
+          ls -la dist/
+          echo "创建压缩包..."
+          cd dist && tar -czf ../${{ matrix.archive }} *
+          cd ..
+          echo "验证压缩包:"
+          ls -la ${{ matrix.archive }}
+
+      - name: 打包 (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          Write-Host "Creating package directory..."
+          $distPath = "dist"
+          if (-not (Test-Path $distPath)) {
+              New-Item -ItemType Directory -Force -Path $distPath | Out-Null
+          }
+          
+          Write-Host "Copying binary file..."
+          $binaryPath = "target/${{ matrix.target }}/release/${{ matrix.binary }}"
+          Copy-Item $binaryPath "dist/"
+          
+          Write-Host "Copying configuration files..."
+          if (Test-Path "config.yaml.example") {
+              Copy-Item "config.yaml.example" "dist/config.yaml"
+          }
+          
+          if (Test-Path "README.md") {
+              Copy-Item "README.md" "dist/"
+          }
+          
+          Write-Host "Package contents:"
+          Get-ChildItem "dist/" | Format-Table
+          
+          Write-Host "Creating archive..."
+          $archivePath = "${{ matrix.archive }}"
+          Compress-Archive -Path "dist/*" -DestinationPath $archivePath -Force
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive }}
+          path: ${{ matrix.archive }}
+          retention-days: 7
+
+  # 2️⃣ Docker多架构镜像构建
+  build-docker:
+    name: 🐳 多架构Docker镜像构建 (Alpine)
+    runs-on: ubuntu-latest
+    needs: build-binaries
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 下载Linux x86_64 musl二进制文件
+        uses: actions/download-artifact@v4
+        with:
+          name: smart-forward-linux-x86_64-musl.tar.gz
+          path: ./artifacts/x86_64
+
+      - name: 下载Linux ARM64 musl二进制文件
+        uses: actions/download-artifact@v4
+        with:
+          name: smart-forward-linux-aarch64-musl.tar.gz
+          path: ./artifacts/aarch64
+
+      - name: 准备多架构二进制文件
+        run: |
+          echo "解压x86_64 musl二进制..."
+          cd artifacts/x86_64
+          tar -xzf smart-forward-linux-x86_64-musl.tar.gz
+          ls -la
+          mkdir -p ../../binaries/amd64
+          cp smart-forward ../../binaries/amd64/
+          chmod +x ../../binaries/amd64/smart-forward
+          
+          echo "解压aarch64 musl二进制..."
+          cd ../aarch64
+          tar -xzf smart-forward-linux-aarch64-musl.tar.gz
+          ls -la
+          mkdir -p ../../binaries/arm64
+          cp smart-forward ../../binaries/arm64/
+          chmod +x ../../binaries/arm64/smart-forward
+          
+          echo "验证二进制文件..."
+          cd ../../
+          ls -la binaries/*/
+          file binaries/amd64/smart-forward
+          file binaries/arm64/smart-forward
+
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 构建并推送多架构 Docker 镜像
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # 3️⃣ 自动发布
+  create-release:
+    name: 📦 创建GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-binaries, build-docker]
+    if: always() && needs.build-binaries.result == 'success'
+    permissions:
+      contents: write
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 下载所有构建产物
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: 准备发布文件
+        run: |
+          mkdir -p release-files
+          echo "查找构建产物..."
+          find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" \) -print
+          echo "复制构建产物..."
+          find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" \) -exec cp {} release-files/ \;
+          echo "发布文件列表:"
+          ls -la release-files/
+
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Smart Forward ${{ github.ref_name }}
+          files: release-files/*
+          body: |
+            # 🚀 Smart Forward ${{ github.ref_name }}
+            
+            ## 📦 下载二进制文件
+            - **Windows**: `smart-forward-windows-x86_64.zip`
+            - **macOS Intel**: `smart-forward-macos-x86_64.tar.gz`
+            - **macOS Apple Silicon**: `smart-forward-macos-aarch64.tar.gz`
+            - **Linux x86_64 (GNU)**: `smart-forward-linux-x86_64-gnu.tar.gz`
+            - **Linux ARM64 (GNU)**: `smart-forward-linux-aarch64-gnu.tar.gz`  
+            - **Linux x86_64 (musl)**: `smart-forward-linux-x86_64-musl.tar.gz` 🔥
+            - **Linux ARM64 (musl)**: `smart-forward-linux-aarch64-musl.tar.gz` 🔥
+            - **Linux ARMv7 (musl)**: `smart-forward-linux-armv7-musl.tar.gz` 🔥 (OpenWrt兼容)
+            
+            ## 🐳 多架构Docker镜像 (Alpine 3.18 + musl - 仅15MB)
+            支持 `linux/amd64` 和 `linux/arm64` 架构
+            
+            ```bash
+            # 拉取最新版本
+            docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            
+            # 或拉取latest版本
+            docker pull ghcr.io/${{ github.repository }}:latest
+            
+            # 运行容器
+            docker run -d --name smart-forward --network host ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            
+            # 使用自定义配置
+            docker run -d --name smart-forward -v /path/to/config.yaml:/app/config.yaml --network host ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
