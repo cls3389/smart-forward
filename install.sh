@@ -12,7 +12,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # 版本信息
-VERSION="v1.5.1"
+VERSION="v1.5.2"
 GITHUB_REPO="cls3389/smart-forward"
 BINARY_NAME="smart-forward"
 
@@ -122,7 +122,8 @@ logging:
   format: "text"  # OpenWrt推荐使用text格式
 
 network:
-  listen_addr: "0.0.0.0"
+  listen_addrs:
+    - "0.0.0.0"
 
 # 缓冲区大小 (仅用户态模式有效，内核态模式忽略)
 buffer_size: 8192
@@ -280,7 +281,8 @@ logging:
   format: "json"  # Linux推荐使用json格式
 
 network:
-  listen_addr: "0.0.0.0"
+  listen_addrs:
+    - "0.0.0.0"
 
 buffer_size: 8192
 
