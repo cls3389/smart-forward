@@ -1,0 +1,115 @@
+# ================================
+# 智能网络转发器配置文件 - OpenWrt内核态转发测试版
+# ================================
+# 功能特性：
+#   ✓ 支持TCP、UDP、HTTP协议转发
+#   ✓ 动态地址解析与故障转移  
+#   ✓ DNS缓存优化 (5分钟缓存)
+#   ✓ 健康检查与自动切换
+#   ✓ 同端口多协议支持 (TCP+UDP)
+#   ✓ HTTP自动跳转HTTPS
+#   ✓ 内核态转发 (iptables/nftables) - 性能提升10倍+
+# ================================
+
+# 日志配置
+logging:
+  level: "info"      # 日志级别: debug/info/warn/error
+  format: "text"     # 日志格式: json/text (OpenWrt推荐text格式)
+
+# 网络配置
+network:
+  listen_addr: "0.0.0.0"    # 监听地址: 0.0.0.0表示绑定所有网卡
+
+# 全局默认缓冲区大小 (字节) - 仅用户态转发有效
+# 内核态转发时此设置无效，数据直接在内核空间处理
+buffer_size: 8192
+
+# ================================
+# 转发规则配置
+# ================================
+
+rules:
+  # --------------------------------
+  # HTTPS 服务转发 (443端口)
+  # --------------------------------  
+  - name: "HTTPS"
+    listen_port: 443
+    protocol: "tcp"           # 单TCP协议 (HTTPS标准)
+    buffer_size: 4096         # 4KB缓冲区，适合Web请求
+    targets:                  # 按优先级排序，支持故障转移
+      - "192.168.5.254:443"        # 优先级1: 内网服务器
+      - "121.40.167.222:50443"     # 优先级2: 外网备用
+      - "stun-443.4.ipto.top"      # 优先级3: 动态域名(TXT记录)    
+      
+  # --------------------------------
+  # RDP 服务转发 (99端口)
+  # 支持TCP+UDP双协议，适配STUN穿透
+  # --------------------------------
+  - name: "RDP"
+    listen_port: 99
+    # 协议: 不指定时默认支持TCP+UDP双协议
+    buffer_size: 16384        # 16KB缓冲区，适合RDP数据流
+    targets:
+      - "192.168.5.12:3389"        # 优先级1: 内网RDP服务器  
+      - "121.40.167.222:57111"     # 优先级2: 外网RDP端口
+      - "ewin10.4.ipto.top"        # 优先级3: 动态域名解析 
+
+      
+  # --------------------------------
+  # 网盘服务转发 (6690端口) 
+  # --------------------------------
+  - name: "Drive"
+    listen_port: 6690
+    protocol: "tcp"           # 单TCP协议 (文件传输)
+    buffer_size: 32768        # 32KB大缓冲区，优化文件传输
+    targets:
+      - "192.168.5.3:6690"         # 优先级1: 内网网盘服务器
+      - "121.40.167.222:6690"      # 优先级2: 外网网盘端口  
+      - "drive.4.ipto.top"         # 优先级3: 动态域名(TXT记录)  
+
+  # --------------------------------
+  # 分离式RDP (999端口)
+  # TCP+UDP分别配置，适合特殊场景
+  # --------------------------------
+  - name: "tRDP"            # RDP TCP协议
+    listen_port: 999
+    protocol: "tcp" 
+    buffer_size: 16384    
+    targets:
+      - "ewin10.4.ipto.top"        # TCP专用目标
+
+  - name: "uRDP"            # RDP UDP协议  
+    listen_port: 999
+    protocol: "udp"
+    buffer_size: 16384    
+    targets:
+      - "uewin10.4.ipto.top"       # UDP专用目标
+
+  - name: "Home"            
+    listen_port: 10800
+    protocol: "tcp" 
+    buffer_size: 8192    
+    targets:
+      - "home.4.ipto.top"        
+
+  - name: "uHome"            
+    listen_port: 10800
+    protocol: "udp" 
+    buffer_size: 8192    
+    targets:
+      - "uhome.4.ipto.top"           
+
+# ================================
+# OpenWrt内核态转发说明：
+# 1. 启动时会自动检测防火墙后端 (nftables > iptables)
+# 2. 内核态转发优先级高于Firewall4默认规则
+# 3. 用户态负责健康检查，内核态负责数据转发
+# 4. 支持动态切换目标，无需重启服务
+# 5. 缓冲区设置在内核态下无效，性能更优
+# ================================
+
+# 启动命令示例：
+# 自动模式 (推荐): ./smart-forward -c openwrt-config.yaml
+# 强制内核态: sudo ./smart-forward -c openwrt-config.yaml --kernel-mode
+# 强制用户态: ./smart-forward -c openwrt-config.yaml --user-mode
+# 指定防火墙: sudo ./smart-forward -c openwrt-config.yaml --firewall-backend nftables
