@@ -5,7 +5,7 @@ use crate::firewall::FirewallScheduler;
 use crate::utils::{get_standard_stats, get_stats_with_target, ConnectionStats};
 use anyhow::Result;
 use async_trait::async_trait;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
