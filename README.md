@@ -1,4 +1,4 @@
-# Smart Forward - 智能网络转发器 v1.5.1
+# Smart Forward - 智能网络转发器 v1.5.2
 
 [![🚀 全平台发布](https://github.com/cls3389/smart-forward/actions/workflows/release.yml/badge.svg)](https://github.com/cls3389/smart-forward/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -15,21 +15,63 @@
 - 🔧 **混合模式**: 用户态健康检查 + 内核态数据转发，智能故障切换
 - 🛡️ **防火墙优化**: 自动处理Firewall4优先级，避免规则冲突
 - 🔧 **灵活配置**: YAML 配置文件，支持多规则配置
-- 🐳 **Docker 支持**: 提供多架构 Docker 镜像
 - 📊 **健康检查**: 自动监控目标服务器状态
 - 🔒 **AutoHTTP**: 自动HTTP跳转HTTPS，智能端口检测
+- 🏃 **轻量高效**: 专为路由器等资源受限环境优化
 
 ## 🚀 快速开始
 
-### 1. 下载
+### 1. 安装
 
-#### 📦 一键安装 (推荐)
+#### 📦 原生系统安装 (推荐)
 ```bash
-# 统一安装脚本 - 自动检测系统类型 (Linux/OpenWrt)
+# 交互式安装脚本 - 自动检测Linux/OpenWrt环境
 curl -fsSL https://raw.githubusercontent.com/cls3389/smart-forward/main/install.sh | bash
 
 # 或使用 wget
 wget -qO- https://raw.githubusercontent.com/cls3389/smart-forward/main/install.sh | bash
+```
+
+**💡 提示**: Docker用户请直接使用Docker命令，此脚本仅用于原生Linux/OpenWrt系统安装
+
+**安装特性**:
+- 🔍 **自动检测**: 自动识别Linux或OpenWrt环境
+- 🎛️ **交互式配置**: 选择监听地址和转发规则
+- 📋 **智能升级**: 保留现有配置，清理旧程序
+- ⚙️ **零配置**: 默认配置即可运行，支持后续修改
+
+### 2. 配置
+
+编辑 `config.yaml` 配置文件（已包含完整的生产配置示例）：
+
+```yaml
+# 网络配置
+network:
+  listen_addrs:
+    - "10.5.1.1"    # 指定具体IP避免劫持
+
+# 转发规则
+rules:
+  - name: "HTTPS"
+    listen_port: 443
+    protocol: "tcp"
+    targets:
+      - "192.168.5.254:443"
+      - "121.40.167.222:50443"
+      - "stun-443.4.ipto.top"
+```
+
+### 3. 启动
+
+```bash
+# 前台运行（推荐用于测试）
+./start.sh
+
+# 后台运行（推荐用于生产）
+./start.sh daemon
+
+# 停止服务
+./stop.sh
 ```
 
 **特性**:
@@ -38,105 +80,90 @@ wget -qO- https://raw.githubusercontent.com/cls3389/smart-forward/main/install.s
 - 🌐 **IPv4/IPv6**: 支持现代混合网络环境
 - ⚡ **零配置**: 开箱即用，自动优化
 
-#### 🐳 Docker 运行
+#### 🐳 Docker 容器部署
 ```bash
-# 用户态转发 (跨平台)
+# 用户态转发 (推荐，跨平台兼容)
 docker run -d --name smart-forward --network host \
   -v $(pwd)/config.yaml:/app/config.yaml:ro \
   ghcr.io/cls3389/smart-forward:latest
 
-# 内核态转发 (Linux，需要特权模式)
+# 内核态转发 (Linux高性能，需要特权模式)
 docker run -d --name smart-forward --privileged --network host \
   -v $(pwd)/config.yaml:/app/config.yaml:ro \
   ghcr.io/cls3389/smart-forward:latest \
-  --kernel-mode --firewall-backend auto
+  --kernel-mode
 ```
 
-#### 💾 手动下载
+**💡 Docker vs 原生安装**:
+- 🐳 **Docker**: 容器化部署，易于分发和管理
+- 🖥️ **原生安装**: 直接安装到系统，性能更好，资源占用更少
+
+#### 💾 手动下载二进制文件
 [📥 GitHub Releases](https://github.com/cls3389/smart-forward/releases/latest) - 支持 Windows、macOS、Linux
 
-### 2. 配置
+#### 🟢 简单启动脚本 (小白友好)
+```bash
+# 快速启动
+./start.sh
 
-创建 `config.yaml`：
+# 快速停止
+./stop.sh
 
-```yaml
-# 基础配置
-logging:
-  level: "info"
-  format: "json"
-
-network:
-  listen_addr: "10.5.1.1"  # 指定监听地址，避免劫持所有请求
-                            # 设置0.0.0.0会劫持所有端口流量，请谨慎使用
-
-# 转发规则
-rules:
-  - name: "HTTPS"
-    listen_port: 443
-    protocol: "tcp"
-    targets:
-      - "192.168.1.100:443"        # 主服务器
-      - "backup.example.com:443"   # 备用服务器
-      
-  - name: "RDP"
-    listen_port: 99
-    # 不指定协议时默认TCP+UDP双协议
-    targets:
-      - "192.168.1.200:3389"
+# 查看状态
+ps aux | grep smart-forward
 ```
 
-### 3. 运行
+**💡 小白用户提示**:
+- ✅ **一键启动**: `./start.sh` - 自动检查配置并启动服务
+- ✅ **一键停止**: `./stop.sh` - 安全停止服务，支持强制停止
+- ✅ **智能检查**: 自动检查配置文件是否存在
+- ✅ **友好提示**: 彩色输出，清晰的状态信息
+
+### 2. 运行
 
 ```bash
-# 自动模式 (Linux自动尝试内核态，失败回退用户态)
+# 自动模式（推荐）
 ./smart-forward
 
-# 强制用户态转发 (跨平台兼容)
+# 强制用户态转发（跨平台兼容）
 ./smart-forward --user-mode
 
-# 强制内核态转发 (Linux高性能模式)
-sudo ./smart-forward --kernel-mode --firewall-backend auto
+# 强制内核态转发（Linux高性能模式，需要root权限）
+./smart-forward --kernel-mode
 
-# OpenWrt 服务管理
-/etc/init.d/smart-forward start              # 启动服务
-/etc/init.d/smart-forward status             # 查看状态
-/etc/init.d/smart-forward enable_kernel_mode # 启用内核态
+# 系统服务管理（安装后自动配置）
+# OpenWrt:
+# 启动服务: /etc/init.d/smart-forward start
+# 查看状态: /etc/init.d/smart-forward status
+# 查看日志: logread | grep smart-forward
 
-# Windows (仅用户态)
-smart-forward.exe
-
-# Docker Compose
-cd docker && docker-compose up -d
+# Linux:
+# 启动服务: systemctl start smart-forward  # 或 sudo systemctl start smart-forward
+# 查看状态: systemctl status smart-forward  # 或 sudo systemctl status smart-forward
+# 查看日志: journalctl -u smart-forward -f  # 或 sudo journalctl -u smart-forward -f
 ```
 
 ## 📊 日志查看
 
-### Linux (systemd)
+### 简化日志查看
 ```bash
-# 实时日志
-sudo journalctl -u smart-forward -f
+# 后台运行时的日志文件
+tail -f /tmp/smart-forward.log          # 手动后台模式
+tail -f /var/log/smart-forward.log      # Linux systemd
 
-# 最近日志
-sudo journalctl -u smart-forward --since "1 hour ago"
-
-# 错误日志
-sudo journalctl -u smart-forward -p err
-```
-
-### OpenWrt (logread)
-```bash
-# 实时日志
+# 系统日志
+# OpenWrt:
 logread -f | grep smart-forward
 
-# 最近日志
-logread | grep smart-forward | tail -20
-
-# 健康检查日志
-logread | grep smart-forward | grep 健康检查
-
-# 错误和警告
-logread | grep smart-forward | grep -E 'ERROR|WARN|错误'
+# Linux:
+sudo journalctl -u smart-forward -f
 ```
+
+### 日志级别说明
+- **INFO**: 正常运行信息（启动、服务状态、健康检查等）
+- **WARN**: 警告信息（端口占用、目标异常等）
+- **ERROR**: 错误信息（配置文件错误、权限不足等）
+- **DEBUG**: 调试信息（详细的内部状态变化）
 
 ### 运行模式识别
 - **内核态转发**: 日志显示 `🚀 内核态转发模式`，无端口监听，有nftables规则
@@ -154,19 +181,51 @@ logread | grep smart-forward | grep -E 'ERROR|WARN|错误'
 ```
 smart-forward/
 ├── 📁 src/                    # 🦀 Rust 源代码
-├── 📁 docker/                 # 🐳 Docker 配置文件
-├── 📄 install.sh              # 🚀 统一安装脚本
-├── 📄 README.md               # 📖 完整文档 (配置+故障排除)
-├── ⚙️ config.yaml.example     # 🎯 配置文件示例
+├── 📁 docker/                 # 🐳 Docker 配置文件 (独立部署使用)
+├── 📄 install.sh              # 🚀 原生系统安装脚本 (Linux/OpenWrt)
+├── 📄 start.sh                # 🟢 简单启动脚本 (小白友好)
+├── 📄 stop.sh                 # 🔴 简单停止脚本 (小白友好)
+├── 📄 config.yaml            # ⚙️  主配置文件 (生产配置)
+├── 📄 config.yaml.example     # 🎯 配置文件示例
+├── 📄 README.md               # 📖 完整文档
 └── 🏗️ Cargo.toml              # 📦 Rust 项目配置
 ```
 
-**简化原则**:
-- ✅ **一个安装脚本** - 自动检测环境，支持所有平台
-- ✅ **一个文档文件** - README包含所有必要信息
-- ✅ **核心功能** - 专注于高性能网络转发
+**文件说明**:
+- ✅ **原生安装脚本** - 专门用于Linux/OpenWrt系统的原生安装
+- ✅ **简单启动脚本** - 小白友好的快速启动/停止工具
+- ✅ **核心配置文件** - 包含完整生产配置示例
+- ✅ **统一文档** - README包含所有必要信息
+- ✅ **用户友好** - 提供多种部署选择，照顾不同用户群体
 
 ## 📈 版本更新
+
+### v1.5.2 (2025-09-20) 🚀 **用户友好 + 简单启动**
+🔥 **小白友好 + 多种部署选择**
+
+⚡ **核心改进**：
+- **简单启动脚本** - `./start.sh` 和 `./stop.sh` 照顾小白用户
+- **原生安装脚本** - 专门用于Linux/OpenWrt系统的原生安装
+- **Docker环境检测** - 自动识别Docker容器环境并给出指导
+- **部署方式分离** - 原生安装和Docker部署各司其职
+
+🎛️ **交互特性**：
+- **网络接口检测** - 自动识别可用网络接口和IP地址
+- **监听地址配置** - 选择具体IP或监听所有接口(0.0.0.0)
+- **转发规则配置** - 交互式添加HTTP、HTTPS、RDP等转发规则
+- **配置预览** - 安装前显示配置内容供确认
+
+🛡️ **安装特性**：
+- **跨平台兼容** - 自动检测并适配Linux/OpenWrt环境
+- **配置保护** - 升级时自动备份用户配置文件
+- **服务管理** - 自动配置systemd/procd服务
+- **路径统一** - 解决二进制文件路径不一致问题
+
+🎯 **部署选择**：
+- 🟢 **简单启动**: `./start.sh` - 小白友好的快速启动
+- 🖥️ **原生安装**: `install.sh` - 适合生产环境的高性能安装
+- 🐳 **Docker部署**: `docker run` - 适合开发测试的容器化部署
+- 📦 **手动下载**: GitHub Releases - 灵活部署，支持更多平台
 
 ### v1.5.0 (2025-09-20) 🚀 **内核态转发重大更新**
 🔥 **革命性性能提升 - 内核态转发支持**
@@ -186,158 +245,6 @@ smart-forward/
 - **一键安装脚本** - 自动检测架构并安装
 - **procd服务管理** - 完整的OpenWrt服务集成
 - **资源优化** - 专为路由器性能优化
-
-🔧 **开发体验**：
-- **跨平台兼容** - Windows/macOS自动用户态，Linux智能选择
-- **Docker支持** - 内核态和用户态双模式
-- **配置无感** - 无需修改配置文件，自动检测
-
-### v1.4.6 (2025-09-09)
-🔧 **最终修复单目标规则重复警告**
-
-🚫 **彻底解决**：
-- **单目标规则逻辑** - 当tRDP等规则只有一个目标且不健康时
-- **消除重复警告** - 不再重复输出"强制切换到备用地址"
-- **智能警告判断** - 有备用地址才提示切换，无备用地址时合理保持
-
-🎯 **具体修复**：
-- **tRDP规则**：只有 `ewin10.example.com` 一个目标时，不健康时显示"无健康目标，保持当前地址"而非"强制切换"
-- **30秒间隔警告**：避免每2秒重复相同警告，30秒最多一次
-- **Debug日志优化**：单目标不健康情况改为debug级别，减少日志噪音
-
-### v1.4.5 (2025-09-09)
-🔧 **修复健康检查无限循环 - 根治重复日志问题**
-
-🚫 **问题修复**：
-- **DNS解析循环** - 修复DNS解析成功≠服务恢复的逻辑错误
-- **重复日志清理** - 大幅减少重复的健康状态变化日志
-- **智能日志控制** - 只在状态真正变化或恢复健康时记录
-
-⚡ **性能优化**：
-- **减少不必要的连接验证** - 只在地址真正变化时才立即验证
-- **时间控制的日志** - 避免每2秒重复相同的警告信息
-- **优化规则更新逻辑** - 减少无效的规则选择计算
-
-🎯 **用户体验**：
-- **tRDP规则** 不再出现无限循环的健康状态切换
-- **日志清洁度** 大幅提升，专注于真正有意义的状态变化
-- **系统稳定性** 增强，避免不必要的资源消耗
-
-### v1.4.4 (2025-09-09)
-⚡ **极速故障检测 - 立即切换优化**
-
-🚀 **快速响应优化**：
-- **健康检查间隔** - 从15秒缩短到 **5秒**，快速发现故障
-- **连接超时时间** - 从5秒缩短到 **2秒**，快速判断连接失败  
-- **检测逻辑** - 每5秒检查一次，单次连接测试最多等待2秒 ⚡
-
-🔒 **配置保护**：
-- 添加 `local-config.yaml` 到 `.gitignore`，保护测试配置不被上传
-
-🎯 **用户体验**：
-- `stun-443.example.com` 失败后，**最多5秒+2秒内快速切换**到备用地址
-- 大幅提升故障转移响应速度（比之前快2-3倍）
-
-### v1.4.3 (2025-09-09)
-🔧 **增强健康状态检测 - 强化切换逻辑**
-
-✅ **健康状态检测增强**：
-- **当前目标健康状态监控** - 检测当前地址变为不健康时强制切换
-- **健康状态变化日志** - 详细记录地址健康状态变化原因
-- **切换逻辑优化** - 确保地址不健康时立即切换到最优备用地址
-
-🎯 **问题诊断改进**：
-- 增加详细的切换原因日志
-- 健康状态变化实时监控
-- 优化备用地址选择算法
-
-### v1.4.2 (2025-09-09)
-🚀 **智能切换策略 - 解决"死磕"不健康地址问题**
-
-✅ **用户建议的完美策略**：
-- **异常后立即切换** - 当前地址异常时，立即切换到可用的最高优先级健康地址
-- **后台持续监控** - 继续监控所有地址的健康状态
-- **健康了再指定到规则** - 只有确认连接成功后才切换回高优先级地址
-
-🎯 **解决的核心问题**：
-- ❌ 之前：DNS解析恢复 → 立即切换 → 连接验证失败 → "死磕"不健康地址
-- ✅ 现在：DNS解析恢复 → 连接验证 → 验证成功才切换 → 避免"死磕"
-
-🔧 **技术改进**：
-- **同步连接验证** - DNS恢复后立即验证连接，确保健康才参与规则选择
-- **快速故障转移** - 健康检查发现异常后立即切换到其他健康地址
-- **智能回切策略** - 高优先级地址确认健康后才切换回去
-
-### v1.4.1 (2025-09-09)
-🔧 **日志修复 - 解决启动统计混乱**
-
-✅ **修复日志Bug**：
-- **修复启动统计错误** - "6个规则可用(总共5个规则)"的逻辑矛盾
-- **区分配置规则和自动服务** - 自动HTTP跳转服务不计入配置规则数量
-- **日志更清晰** - 现在显示"X个规则可用(配置Y个规则+自动HTTP跳转服务)"
-
-🎯 **显示效果**：
-- 之前：`启动完成: 6 个规则可用 (总共 5 个规则)` ❌ 矛盾
-- 现在：`启动完成: 6 个规则可用 (配置 5 个规则 + 自动HTTP跳转服务)` ✅ 清晰
-
-### v1.4.0 (2025-09-09)
-🎯 **架构重构 - 彻底解决批量触发复杂性**
-
-✅ **核心架构优化**：
-- **取消批量DNS触发机制** - 按用户建议，各域名独立解析处理
-- **移除60秒重试间隔debuff** - 不再有性能降级
-- **简化DNS解析逻辑** - 每个域名独立失败处理，不影响其他域名
-- **升级thiserror依赖** - 从1.0更新到2.0.16，清理技术债务
-
-🚀 **性能和稳定性提升**：
-- 彻底消除无限循环问题
-- 去除复杂的批量触发条件判断
-- DNS解析性能优化：各域名并行独立处理
-- 日志更清晰：只记录真正有更新的域名
-
-🔧 **逻辑简化**：
-- 域名解析失败时单独标记，不触发全局重新解析
-- IP:PORT格式跳过DNS解析（v1.3.9已修复）
-- 优先级选择算法保持高效（v1.3.8已优化）
-
-### v1.3.9 (2025-09-09)
-🚨 **关键Bug修复 - 无限循环和错误解析**
-
-✅ **严重Bug修复**：
-- **修复IP:PORT误判** - `192.168.5.3:6690`等IP地址不再被当作域名解析
-- **修复无限循环** - 失败域名添加60秒重试间隔，避免持续触发批量DNS解析
-- **优化选择算法** - 确保高优先级地址恢复时立即切换回去
-
-🎯 **性能优化**：
-- DNS解析性能提升：跳过不必要的IP地址解析
-- 健康检查效率改进：减少无意义的重复检查
-- 日志清晰度提升：区分域名解析和IP地址处理
-
-🔧 **修复效果**：
-- 解决了部分地址恢复时的无限重试问题
-- 确保IP:PORT格式直接使用，不进行DNS查询
-- 智能转发逻辑更加稳定可靠
-
-### v1.3.6 (2025-09-09)
-🎯 **核心优化 + 项目结构整理**
-
-✅ **核心功能优化**：
-- **DNS切换逻辑优化** - DNS变化时立即验证连接
-- **批量DNS更新机制** - 一个域名变化触发全量更新
-- **健康检查时序优化** - 移除不必要的延迟
-- **IP:PORT处理优化** - 直接IP地址跳过DNS解析
-- **日志重复问题修复** - 清理重复的初始化日志
-
-📁 **项目结构优化**：
-- 创建 `docs/` 目录统一管理文档
-- 创建 `docker/` 目录存放Docker配置
-- 创建 `scripts/` 目录管理构建脚本
-- 文件大小优化：3.3MB → 1.9MB (减少40%+)
-
-🛠️ **开发体验改进**：
-- 通过GitHub CI格式检查
-- 代码结构更简洁，可维护性更好
-- 文档组织更清晰，查找更方便
 
 ## 📊 性能对比
 
@@ -403,12 +310,12 @@ cd smart-forward
 cargo build --release
 
 # 运行
-./target/release/smart-forward
+./target/release/smart-forward -c config.yaml
 ```
 
 ## 🤝 贡献
 
-欢迎贡献代码！请查看 [贡献指南](CONTRIBUTING.md) 了解详情。
+欢迎贡献代码！请直接提交 Pull Request 或 Issue。
 
 ## ⚙️ 配置说明
 
@@ -421,8 +328,9 @@ logging:
 
 # 网络配置
 network:
-  listen_addr: "10.5.1.1"  # 指定监听地址，避免劫持所有请求
-                            # 设置0.0.0.0会劫持所有端口流量，请谨慎使用  # 监听地址
+  listen_addrs:
+    - "10.5.1.1"    # 指定监听地址，避免劫持所有请求
+                     # 设置0.0.0.0会监听所有接口，请谨慎使用
 
 # 缓冲区大小 (仅用户态模式有效，内核态模式忽略)
 buffer_size: 8192
@@ -512,33 +420,43 @@ dig target.example.com TXT
 **症状**: `配置文件解析失败`
 ```bash
 # 验证YAML语法
-./smart-forward --validate-config
+./start.sh                    # 启动时会自动验证配置
+./smart-forward --validate-config -c config.yaml
 
-# 使用默认配置
+# 使用示例配置
 cp config.yaml.example config.yaml
 ```
 
 ### 日志分析
 ```bash
-# Linux
+# 实时查看日志
+# Linux:
 sudo journalctl -u smart-forward -f
 
-# OpenWrt
+# OpenWrt:
 logread -f | grep smart-forward
 
-# 查看错误
+# 查看启动日志
+# Linux:
+sudo journalctl -u smart-forward --since "1 hour ago"
+
+# OpenWrt:
+logread | grep smart-forward | tail -20
+
+# 查看错误和警告
 logread | grep smart-forward | grep -E 'ERROR|WARN|错误'
 ```
 
-### 性能优化
+### 性能监控
 ```bash
-# 检查运行模式
-# 内核态: 0个端口监听，有nftables规则
-# 用户态: 多个端口监听，无nftables规则
+# 检查运行状态
+# OpenWrt:
+ps w | grep smart-forward
+nft list table inet smart_forward | grep dnat | wc -l  # 规则数量
 
-# 内存使用检查
-ps aux | grep smart-forward
-cat /proc/$(pidof smart-forward)/status | grep Vm
+# Linux:
+systemctl status smart-forward
+journalctl -u smart-forward --since "1 hour ago" | grep -E "INFO|ERROR"
 ```
 
 ## 📄 许可证
