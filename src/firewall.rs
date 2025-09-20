@@ -186,7 +186,7 @@ impl NftablesManager {
     fn detect_ip_version(target_addr: &str) -> &'static str {
         let target_parts: Vec<&str> = target_addr.split(':').collect();
         let target_ip = target_parts[0];
-        
+
         // IPv6地址检测规则：
         // 1. 包含 :: (IPv6压缩格式)
         // 2. 包含 [ ] (IPv6端口格式)
@@ -863,15 +863,24 @@ mod tests {
     fn test_ip_version_detection() {
         // IPv4测试
         assert_eq!(NftablesManager::detect_ip_version("192.168.1.1:80"), "ip");
-        assert_eq!(NftablesManager::detect_ip_version("121.40.167.222:443"), "ip");
+        assert_eq!(
+            NftablesManager::detect_ip_version("121.40.167.222:443"),
+            "ip"
+        );
         assert_eq!(NftablesManager::detect_ip_version("10.0.0.1"), "ip");
-        
+
         // IPv6测试
         assert_eq!(NftablesManager::detect_ip_version("2001:db8::1:80"), "ip6");
-        assert_eq!(NftablesManager::detect_ip_version("[2001:db8::1]:80"), "ip6");
+        assert_eq!(
+            NftablesManager::detect_ip_version("[2001:db8::1]:80"),
+            "ip6"
+        );
         assert_eq!(NftablesManager::detect_ip_version("fe80::1"), "ip6");
-        assert_eq!(NftablesManager::detect_ip_version("2001:0db8:85a3:0000:0000:8a2e:0370:7334:443"), "ip6");
-        
+        assert_eq!(
+            NftablesManager::detect_ip_version("2001:0db8:85a3:0000:0000:8a2e:0370:7334:443"),
+            "ip6"
+        );
+
         // 边界情况
         assert_eq!(NftablesManager::detect_ip_version("::1"), "ip6");
         assert_eq!(NftablesManager::detect_ip_version("::"), "ip6");
