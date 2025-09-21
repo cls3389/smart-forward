@@ -261,11 +261,11 @@ impl CommonManager {
         for rule in &config.rules {
             let protocols = rule.get_protocols();
             for target_str in &rule.targets {
-                // 对于TCP+UDP规则，只检查TCP；对于纯UDP规则，检查UDP
+                // 简化协议分类：UDP 和 非UDP
                 let check_protocol = if protocols.len() == 1 && protocols[0] == "udp" {
-                    "udp" // 只有纯UDP规则才检查UDP
+                    "udp" // 纯UDP规则
                 } else {
-                    "tcp" // 其他情况都检查TCP（包括TCP+UDP规则）
+                    "tcp" // 非UDP规则（TCP、TCP+UDP）
                 };
                 target_to_protocol.insert(target_str.clone(), check_protocol);
             }
@@ -386,11 +386,11 @@ impl CommonManager {
         for rule in &config.rules {
             let protocols = rule.get_protocols();
             for target_str in &rule.targets {
-                // 对于TCP+UDP规则，只检查TCP；对于纯UDP规则，检查UDP
+                // 简化协议分类：UDP 和 非UDP
                 let check_protocol = if protocols.len() == 1 && protocols[0] == "udp" {
-                    "udp" // 只有纯UDP规则才检查UDP
+                    "udp" // 纯UDP规则
                 } else {
-                    "tcp" // 其他情况都检查TCP（包括TCP+UDP规则）
+                    "tcp" // 非UDP规则（TCP、TCP+UDP）
                 };
                 target_to_protocol.insert(target_str.clone(), check_protocol);
             }
@@ -407,13 +407,12 @@ impl CommonManager {
             let task = tokio::spawn(async move {
                 let start = Instant::now();
 
-                // 根据规则配置决定健康检查协议
+                // 根据协议类型决定健康检查方式
                 let result = if protocol_to_check == "udp" {
-                    // UDP协议：跳过健康检查，认为DNS解析成功的目标都是健康的
-                    // （DNS解析已在update_dns_resolutions中完成）
+                    // UDP规则：跳过健康检查，认为DNS解析成功的目标都是健康的
                     Ok(Duration::from_millis(0))
                 } else {
-                    // TCP协议：进行连接测试
+                    // 非UDP规则：进行TCP连接测试
                     crate::utils::test_connection(&target_str).await
                 };
 
