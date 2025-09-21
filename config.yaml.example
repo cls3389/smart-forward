@@ -29,7 +29,7 @@ buffer_size: 8192
 # 全局动态更新配置
 dynamic_update:
   check_interval: 5       # 健康检查间隔 (秒)
-  connection_timeout: 2   # 连接超时 (秒)
+  connection_timeout: 3   # 连接超时 (秒)
   auto_reconnect: true    # 自动重连
 
 # ================================
@@ -70,6 +70,18 @@ rules:
     targets:
       - "192.168.1.30:80"          # 优先级1: 内网Web服务器
       - "web.example.com:80"        # 优先级2: 外网Web服务器
+      
+  # --------------------------------
+  # DNS 服务转发 (53端口)
+  # 纯UDP协议，无健康检查，依赖DNS解析更新
+  # --------------------------------
+  - name: "DNS"
+    listen_port: 53
+    protocol: "udp"           # 单UDP协议 (DNS)
+    buffer_size: 1024         # 1KB缓冲区，适合DNS查询
+    targets:
+      - "8.8.8.8:53"               # 优先级1: Google DNS
+      - "dns.example.com:53"        # 优先级2: 动态DNS服务器
 
 # ================================
 # 配置说明：
@@ -79,4 +91,5 @@ rules:
 # 4. 缓冲区大小根据应用类型调优
 # 5. DNS缓存30秒，平衡性能和故障转移速度
 # 6. v1.5.3+ 支持内核态转发立即更新
+# 7. UDP规则DNS解析变化时自动更新DNAT规则 (v1.5.4+)
 # ================================

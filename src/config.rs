@@ -74,7 +74,7 @@ impl Config {
         if config.dynamic_update.is_none() {
             config.dynamic_update = Some(DynamicUpdateConfig {
                 check_interval: Some(5),     // 5秒健康检查间隔，快速故障检测
-                connection_timeout: Some(2), // 2秒连接超时，快速故障检测
+                connection_timeout: Some(3), // 3秒连接超时，快速故障检测
                 auto_reconnect: Some(true),  // 默认开启自动重连
             });
         }

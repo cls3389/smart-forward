@@ -138,6 +138,7 @@ impl CommonManager {
         let target_cache = self.target_cache.clone();
         let rule_infos = self.rule_infos.clone();
         let config = self.config.clone(); // 传递配置信息
+        let callback = self.target_switch_callback.clone();
 
         tokio::spawn(async move {
             let check_interval = config.get_dynamic_update_config().get_check_interval();
@@ -153,13 +154,13 @@ impl CommonManager {
                 interval.tick().await;
 
                 // 1. 进行DNS检查并立即验证连接（已包含连接验证）
-                Self::update_dns_resolutions(&target_cache, &rule_infos, &config).await;
+                Self::update_dns_resolutions(&target_cache, &rule_infos, &config, &callback).await;
 
                 // 2. 对所有目标进行常规健康检查（补充验证）
                 let current_status = Self::batch_health_check(&target_cache, &config).await;
 
                 // 3. 异常后立即切换到可用的最高优先级地址
-                Self::update_rule_targets(&rule_infos, &target_cache, &config, &None).await;
+                Self::update_rule_targets(&rule_infos, &target_cache, &config, &callback).await;
 
                 // 只在状态变化时记录日志，减少重复输出
                 if last_status != Some(current_status.clone()) {
@@ -175,6 +176,7 @@ impl CommonManager {
         target_cache: &Arc<DashMap<String, TargetInfo>>,
         rule_infos: &Arc<RwLock<DashMap<String, RuleInfo>>>,
         config: &Config,
+        callback: &Option<TargetSwitchCallback>,
     ) {
         let targets: Vec<_> = target_cache
             .iter()
@@ -280,7 +282,7 @@ impl CommonManager {
         // 只有当确实有更新时才更新规则目标选择
         if any_updated {
             // 连接验证已同步完成，只有健康的地址会参与规则选择
-            Self::update_rule_targets(rule_infos, target_cache, config, &None).await;
+            Self::update_rule_targets(rule_infos, target_cache, config, callback).await;
         }
     }
 
