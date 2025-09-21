@@ -59,7 +59,7 @@ impl CommonManager {
 
         // 2. 初始健康检查阶段：批量并发检查所有目标
         let health_check_result =
-            Self::quick_batch_health_check(&self.target_cache, &self.config).await;
+            Self::batch_health_check(&self.target_cache, &self.config).await;
         info!("初始健康检查完成: {health_check_result}");
 
         // 3. 选择最优地址阶段：为每个规则选择最佳目标
@@ -246,132 +246,7 @@ impl CommonManager {
         }
     }
 
-    // 快速健康检查 - 启动时使用，缩短超时时间，根据规则配置智能选择协议
-    async fn quick_batch_health_check(
-        target_cache: &Arc<DashMap<String, TargetInfo>>,
-        config: &Config,
-    ) -> String {
-        let targets: Vec<_> = target_cache
-            .iter()
-            .map(|entry| (entry.key().clone(), entry.value().clone()))
-            .collect();
-
-        // 建立目标地址到规则的映射，用于决定健康检查协议
-        let mut target_to_protocol = std::collections::HashMap::new();
-        for rule in &config.rules {
-            let protocols = rule.get_protocols();
-            for target_str in &rule.targets {
-                // 简化协议分类：UDP 和 非UDP
-                let check_protocol = if protocols.len() == 1 && protocols[0] == "udp" {
-                    "udp" // 纯UDP规则
-                } else {
-                    "tcp" // 非UDP规则（TCP、TCP+UDP）
-                };
-                target_to_protocol.insert(target_str.clone(), check_protocol);
-            }
-        }
-
-        // 并发执行健康检查，使用统一的超时时间
-        let mut tasks = Vec::new();
-        for (target_str, target_info) in targets {
-            let protocol_to_check = target_to_protocol
-                .get(&target_str)
-                .copied()
-                .unwrap_or("tcp");
-
-            let config_clone = config.clone();
-            let task = tokio::spawn(async move {
-                let start = Instant::now();
-
-                // 使用配置的超时时间
-                let timeout_duration = Duration::from_secs(
-                    config_clone
-                        .get_dynamic_update_config()
-                        .get_connection_timeout(),
-                );
-
-                // 根据规则配置决定健康检查协议
-                let result = if protocol_to_check == "udp" {
-                    // UDP协议：跳过健康检查，认为DNS解析成功的目标都是健康的
-                    // （DNS解析已在update_dns_resolutions中完成）
-                    Ok(Duration::from_millis(0))
-                } else {
-                    // TCP测试使用动态超时时间
-                    tokio::time::timeout(
-                        timeout_duration,
-                        crate::utils::test_connection(&target_str),
-                    )
-                    .await
-                    .unwrap_or(Err(anyhow::anyhow!("TCP连接测试超时")))
-                };
-
-                let check_time = start.elapsed();
-                (target_str, target_info, result, check_time)
-            });
-            tasks.push(task);
-        }
-
-        // 等待所有检查完成并统计结果
-        let mut success_count = 0;
-        let mut fail_count = 0;
-        let mut status_changes = Vec::new();
-
-        for task in tasks {
-            if let Ok((target_str, mut target_info, result, _check_time)) = task.await {
-                let old_healthy = target_info.healthy;
-
-                match result {
-                    Ok(_) => {
-                        target_info.healthy = true;
-                        target_info.fail_count = 0; // 成功时重置失败计数
-                        target_info.last_check = Instant::now();
-                        success_count += 1;
-
-                        // 如果之前不健康，现在恢复了
-                        if !old_healthy {
-                            status_changes.push(format!("{target_str} 恢复"));
-                        }
-                    }
-                    Err(_e) => {
-                        target_info.fail_count += 1;
-                        target_info.last_check = Instant::now();
-
-                        // 失败1次就标记为不健康，快速切换
-                        if target_info.fail_count >= 1 && old_healthy {
-                            target_info.healthy = false;
-                            status_changes.push(format!("{target_str} 异常"));
-                        }
-
-                        // 统计时仍然按当前健康状态计算
-                        if target_info.healthy {
-                            success_count += 1;
-                        } else {
-                            fail_count += 1;
-                        }
-                    }
-                }
-
-                target_cache.insert(target_str, target_info);
-            }
-        }
-
-        // 生成状态摘要
-        let healthy_addresses = success_count;
-        let unhealthy_addresses = fail_count;
-
-        if !status_changes.is_empty() {
-            format!(
-                "{} 个地址健康，{} 个地址异常 [{}]",
-                healthy_addresses,
-                unhealthy_addresses,
-                status_changes.join(", ")
-            )
-        } else {
-            format!("{healthy_addresses} 个地址健康，{unhealthy_addresses} 个地址异常")
-        }
-    }
-
-    // 标准健康检查 - 定期检查使用，根据规则配置智能选择协议
+    // 健康检查 - 统一的健康检查函数，支持UDP和非UDP规则
     async fn batch_health_check(
         target_cache: &Arc<DashMap<String, TargetInfo>>,
         config: &Config,
