@@ -417,18 +417,11 @@ impl CommonManager {
 
                 // 根据规则配置决定健康检查协议
                 let result = if protocol_to_check == "udp" {
-                    // UDP协议：智能健康检查
-                    if target_str.parse::<std::net::SocketAddr>().is_ok() {
-                        // 直接IP:PORT格式，跳过检查（无法有效验证UDP服务）
-                        Ok(Duration::from_millis(0))
-                    } else {
-                        // 域名格式，尝试DNS解析
-                        match crate::utils::resolve_target(&target_str).await {
-                            Ok(_) => Ok(Duration::from_millis(0)), // DNS解析成功即可
-                            Err(e) => Err(anyhow::anyhow!("UDP目标解析失败: {}", e)),
-                        }
-                    }
+                    // UDP协议：跳过健康检查，认为DNS解析成功的目标都是健康的
+                    // （DNS解析已在update_dns_resolutions中完成）
+                    Ok(Duration::from_millis(0))
                 } else {
+                    // TCP协议：进行连接测试
                     crate::utils::test_connection(&target_str).await
                 };
 
