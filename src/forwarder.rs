@@ -114,7 +114,10 @@ impl TCPForwarder {
     }
 
     pub async fn update_target(&mut self, new_target: &str) -> Result<()> {
-        *self.target_addr.write().await = new_target.to_string();
+        let current_target = self.target_addr.read().await.clone();
+        if current_target != new_target {
+            *self.target_addr.write().await = new_target.to_string();
+        }
         Ok(())
     }
 
@@ -588,7 +591,10 @@ impl UDPForwarder {
     }
 
     pub async fn update_target(&mut self, new_target: &str) -> Result<()> {
-        *self.target_addr.write().await = new_target.to_string();
+        let current_target = self.target_addr.read().await.clone();
+        if current_target != new_target {
+            *self.target_addr.write().await = new_target.to_string();
+        }
         Ok(())
     }
 
