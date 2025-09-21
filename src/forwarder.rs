@@ -527,11 +527,11 @@ impl UDPForwarder {
 
                     let target_addr_str = target_addr.read().await.clone();
 
-                    // DNS缓存：5分钟有效期
+                    // DNS缓存：30秒有效期 (避免过长缓存影响故障转移)
                     let target = if let Some((cached_target, timestamp)) =
                         target_cache.get(&target_addr_str)
                     {
-                        if timestamp.elapsed().as_secs() < 300 {
+                        if timestamp.elapsed().as_secs() < 30 {
                             *cached_target
                         } else {
                             target_cache.remove(&target_addr_str);
