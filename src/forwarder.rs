@@ -525,11 +525,11 @@ impl UDPForwarder {
 
                     let target_addr_str = target_addr.read().await.clone();
 
-                    // 每次都重新解析DNS，确保地址变化能及时反映
-                    let target = match crate::utils::resolve_target(&target_addr_str).await {
+                    // 解析已解析的目标地址字符串（来自CommonManager的DNS解析结果）
+                    let target = match target_addr_str.parse::<std::net::SocketAddr>() {
                         Ok(addr) => addr,
                         Err(e) => {
-                            warn!("UDP目标解析失败: {}", e);
+                            warn!("UDP目标地址解析失败: {} - {}", target_addr_str, e);
                             continue;
                         }
                     };
