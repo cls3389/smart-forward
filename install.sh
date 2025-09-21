@@ -14,7 +14,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # 版本信息
-VERSION="v1.5.2"
+VERSION="v1.5.6"
 GITHUB_REPO="cls3389/smart-forward"
 BINARY_NAME="smart-forward"
 
