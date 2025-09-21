@@ -1,0 +1,83 @@
+# Cursor Rules for Smart Forward Project
+
+## Code Formatting Rules
+
+### Rust Code Formatting
+- **MUST** follow `cargo fmt` standard formatting
+- **MUST** pass `cargo fmt -- --check` validation
+- Long function calls should be split into multiple lines when they exceed readability
+- Function calls with multiple parameters should use multi-line format:
+  ```rust
+  // Preferred multi-line format
+  let result = SomeStruct::long_function_name(
+      &parameter1,
+      &parameter2,
+      parameter3,
+  ).await;
+  
+  // Instead of single line (avoid when too long)
+  let result = SomeStruct::long_function_name(&parameter1, &parameter2, parameter3).await;
+  ```
+
+### Code Quality Rules
+- **MUST** pass `cargo check` compilation
+- **MUST** pass `cargo clippy` linting without warnings
+- **MUST** maintain consistent code style across all modules
+- **SHOULD** use meaningful variable and function names
+- **SHOULD** add comments for complex business logic
+
+### Git Commit Rules
+- **MUST** run code formatting checks before committing:
+  ```bash
+  cargo fmt
+  cargo fmt -- --check
+  cargo clippy
+  cargo check
+  ```
+- **MUST** ensure all tests pass before pushing
+- **SHOULD** use conventional commit messages with emojis
+
+### Documentation Rules
+- **MUST** update version numbers in both `Cargo.toml` and `README.md`
+- **MUST** update documentation when adding new features
+- **SHOULD** include examples in configuration files
+- **SHOULD** maintain clear architecture documentation
+
+### Performance Rules
+- **SHOULD** avoid unnecessary DNS caching
+- **SHOULD** use efficient data structures
+- **SHOULD** minimize memory allocations in hot paths
+- **MUST** ensure real-time DNS resolution for address changes
+
+### Business Logic Rules
+- **UDP rules**: DNS解析 → 有变更更新地址
+- **非UDP rules**: DNS解析 → 健康检查 → 有变更更新地址
+- **MUST** implement immediate DNAT updates for address changes
+- **MUST** support both user-mode and kernel-mode forwarding
+
+### Error Handling Rules
+- **MUST** use proper error handling with `Result<T, E>`
+- **SHOULD** provide meaningful error messages
+- **SHOULD** log errors with appropriate levels (error, warn, info, debug)
+- **MUST** handle network failures gracefully
+
+### Testing Rules
+- **SHOULD** write unit tests for critical business logic
+- **MUST** ensure code compiles on all target platforms
+- **SHOULD** test both TCP and UDP forwarding scenarios
+
+## File Organization Rules
+- Keep configuration examples up to date
+- Maintain clean project structure
+- Remove unused dependencies
+- Keep scripts (start.sh, stop.sh, restart.sh) consistent
+
+## Before Release Checklist
+1. Run `cargo fmt` and `cargo fmt -- --check`
+2. Run `cargo clippy` and fix all warnings
+3. Run `cargo check` and ensure compilation
+4. Update version numbers
+5. Update documentation
+6. Test scripts functionality
+7. Create git tag for release
+8. Verify GitHub Actions pass all checks
