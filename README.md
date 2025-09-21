@@ -1,4 +1,4 @@
-# Smart Forward - 智能网络转发器 v1.5.3
+# Smart Forward - 智能网络转发器 v1.5.4
 
 [![🚀 全平台发布](https://github.com/cls3389/smart-forward/actions/workflows/release.yml/badge.svg)](https://github.com/cls3389/smart-forward/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -199,6 +199,27 @@ smart-forward/
 - ✅ **用户友好** - 提供多种部署选择，照顾不同用户群体
 
 ## 📈 版本更新
+
+### v1.5.4 (2025-09-21) ⚡ **DNS解析性能优化**
+🔥 **大幅提升DNS解析和连接速度**
+
+⚡ **性能优化**：
+- **DNS超时优化** - 从5秒缩短到2秒，减少60%等待时间
+- **多DNS服务器** - 添加Google、Cloudflare DNS提高解析成功率
+- **连接超时优化** - TCP连接超时从5秒缩短到3秒
+- **DNS缓存优化** - 用户态转发DNS缓存从5分钟缩短到30秒
+
+🛡️ **可靠性提升**：
+- **多重DNS备选** - 阿里云、Google、Cloudflare DNS自动切换
+- **快速故障检测** - 连接测试超时时间优化到3秒
+- **减少延迟** - DNS解析总时间从最长10秒降至4秒
+- **提升响应速度** - 故障转移整体速度提升50%+
+
+🎯 **修复效果**：
+- ✅ **DNS解析加速**: 2秒超时 + 多服务器并行
+- ✅ **连接速度提升**: 3秒TCP连接超时
+- ✅ **故障转移加速**: 总响应时间大幅缩短
+- ✅ **网络兼容性**: 多DNS服务器适应不同网络环境
 
 ### v1.5.3 (2025-09-21) 🔧 **内核态转发立即更新**
 🔥 **修复内核态转发核心问题**

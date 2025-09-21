@@ -134,7 +134,7 @@ impl TCPForwarder {
 
         // 直接连接，不重试（让健康检查快速切换到正确地址）
         let mut target_stream = match tokio::time::timeout(
-            tokio::time::Duration::from_secs(5),
+            tokio::time::Duration::from_secs(3),  // 缩短连接超时时间
             tokio::net::TcpStream::connect(target),
         )
         .await

@@ -79,21 +79,25 @@ async fn resolve_domain_with_aliyun_dns(hostname: &str, port: u16) -> Result<Soc
         // 创建阿里云DNS解析器
         let mut config = ResolverConfig::new();
 
-        // 添加阿里云DNS服务器
-        let aliyun_dns1: SocketAddr = "223.5.5.5:53".parse()?;
-        let aliyun_dns2: SocketAddr = "223.6.6.6:53".parse()?;
+        // 添加多个DNS服务器提高解析成功率和速度
+        let dns_servers = [
+            "223.5.5.5:53",    // 阿里云DNS
+            "223.6.6.6:53",    // 阿里云DNS
+            "8.8.8.8:53",      // Google DNS
+            "1.1.1.1:53",      // Cloudflare DNS
+        ];
 
-        config.add_name_server(hickory_resolver::config::NameServerConfig::new(
-            aliyun_dns1,
-            hickory_resolver::config::Protocol::Udp,
-        ));
-        config.add_name_server(hickory_resolver::config::NameServerConfig::new(
-            aliyun_dns2,
-            hickory_resolver::config::Protocol::Udp,
-        ));
+        for dns_server in &dns_servers {
+            if let Ok(addr) = dns_server.parse::<SocketAddr>() {
+                config.add_name_server(hickory_resolver::config::NameServerConfig::new(
+                    addr,
+                    hickory_resolver::config::Protocol::Udp,
+                ));
+            }
+        }
 
         let mut opts = ResolverOpts::default();
-        opts.timeout = Duration::from_secs(5);
+        opts.timeout = Duration::from_secs(2);  // 缩短超时时间到2秒
         opts.attempts = 2;
 
         let resolver = Resolver::new(config, opts)?;
@@ -131,21 +135,25 @@ async fn resolve_txt_record_with_aliyun_dns(hostname: &str) -> Result<SocketAddr
         // 创建阿里云DNS解析器
         let mut config = ResolverConfig::new();
 
-        // 添加阿里云DNS服务器
-        let aliyun_dns1: SocketAddr = "223.5.5.5:53".parse()?;
-        let aliyun_dns2: SocketAddr = "223.6.6.6:53".parse()?;
+        // 添加多个DNS服务器提高解析成功率和速度
+        let dns_servers = [
+            "223.5.5.5:53",    // 阿里云DNS
+            "223.6.6.6:53",    // 阿里云DNS
+            "8.8.8.8:53",      // Google DNS
+            "1.1.1.1:53",      // Cloudflare DNS
+        ];
 
-        config.add_name_server(hickory_resolver::config::NameServerConfig::new(
-            aliyun_dns1,
-            hickory_resolver::config::Protocol::Udp,
-        ));
-        config.add_name_server(hickory_resolver::config::NameServerConfig::new(
-            aliyun_dns2,
-            hickory_resolver::config::Protocol::Udp,
-        ));
+        for dns_server in &dns_servers {
+            if let Ok(addr) = dns_server.parse::<SocketAddr>() {
+                config.add_name_server(hickory_resolver::config::NameServerConfig::new(
+                    addr,
+                    hickory_resolver::config::Protocol::Udp,
+                ));
+            }
+        }
 
         let mut opts = ResolverOpts::default();
-        opts.timeout = Duration::from_secs(5);
+        opts.timeout = Duration::from_secs(2);  // 缩短超时时间到2秒
         opts.attempts = 2;
 
         let resolver = Resolver::new(config, opts)?;
@@ -183,8 +191,8 @@ pub async fn test_connection(target: &str) -> Result<Duration> {
     let addr = resolve_target(target).await?;
     let start = Instant::now();
 
-    // 统一使用5秒超时时间
-    match tokio::time::timeout(Duration::from_secs(5), tokio::net::TcpStream::connect(addr)).await {
+    // 统一使用3秒超时时间，提高故障检测速度
+    match tokio::time::timeout(Duration::from_secs(3), tokio::net::TcpStream::connect(addr)).await {
         Ok(Ok(_)) => Ok(start.elapsed()),
         Ok(Err(e)) => Err(anyhow::anyhow!("连接失败 {}: {}", target, e)),
         Err(_) => Err(anyhow::anyhow!("连接超时: {}", target)),
