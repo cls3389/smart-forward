@@ -81,10 +81,10 @@ async fn resolve_domain_with_aliyun_dns(hostname: &str, port: u16) -> Result<Soc
 
         // 添加多个DNS服务器提高解析成功率和速度
         let dns_servers = [
-            "223.5.5.5:53",    // 阿里云DNS
-            "223.6.6.6:53",    // 阿里云DNS
-            "8.8.8.8:53",      // Google DNS
-            "1.1.1.1:53",      // Cloudflare DNS
+            "223.5.5.5:53", // 阿里云DNS
+            "223.6.6.6:53", // 阿里云DNS
+            "8.8.8.8:53",   // Google DNS
+            "1.1.1.1:53",   // Cloudflare DNS
         ];
 
         for dns_server in &dns_servers {
@@ -97,7 +97,7 @@ async fn resolve_domain_with_aliyun_dns(hostname: &str, port: u16) -> Result<Soc
         }
 
         let mut opts = ResolverOpts::default();
-        opts.timeout = Duration::from_secs(2);  // 缩短超时时间到2秒
+        opts.timeout = Duration::from_secs(2); // 缩短超时时间到2秒
         opts.attempts = 2;
 
         let resolver = Resolver::new(config, opts)?;
@@ -137,10 +137,10 @@ async fn resolve_txt_record_with_aliyun_dns(hostname: &str) -> Result<SocketAddr
 
         // 添加多个DNS服务器提高解析成功率和速度
         let dns_servers = [
-            "223.5.5.5:53",    // 阿里云DNS
-            "223.6.6.6:53",    // 阿里云DNS
-            "8.8.8.8:53",      // Google DNS
-            "1.1.1.1:53",      // Cloudflare DNS
+            "223.5.5.5:53", // 阿里云DNS
+            "223.6.6.6:53", // 阿里云DNS
+            "8.8.8.8:53",   // Google DNS
+            "1.1.1.1:53",   // Cloudflare DNS
         ];
 
         for dns_server in &dns_servers {
@@ -153,7 +153,7 @@ async fn resolve_txt_record_with_aliyun_dns(hostname: &str) -> Result<SocketAddr
         }
 
         let mut opts = ResolverOpts::default();
-        opts.timeout = Duration::from_secs(2);  // 缩短超时时间到2秒
+        opts.timeout = Duration::from_secs(2); // 缩短超时时间到2秒
         opts.attempts = 2;
 
         let resolver = Resolver::new(config, opts)?;
