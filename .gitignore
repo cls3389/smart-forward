@@ -5,6 +5,7 @@
 # IDE
 .vscode/
 .idea/
+.cursorrules
 *.swp
 *.swo
 
