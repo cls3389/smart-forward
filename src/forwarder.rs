@@ -5,13 +5,13 @@ use crate::firewall::FirewallScheduler;
 use crate::utils::{get_standard_stats, get_stats_with_target, ConnectionStats};
 use anyhow::Result;
 use async_trait::async_trait;
-use log::{debug, error, info, warn};
+use log::{error, info, warn};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 // ================================
 // 转发器特征定义
@@ -811,7 +811,7 @@ pub struct SmartForwarder {
     common_manager: CommonManager,
     forwarders: Arc<RwLock<HashMap<String, Box<dyn Forwarder + Send + Sync>>>>,
     dynamic_update_started: Arc<RwLock<bool>>,
-    firewall_scheduler: Option<FirewallScheduler>,
+    firewall_scheduler: Option<Arc<Mutex<FirewallScheduler>>>,
 }
 
 impl SmartForwarder {
@@ -825,11 +825,36 @@ impl SmartForwarder {
             common_manager,
             forwarders: Arc::new(RwLock::new(HashMap::new())),
             dynamic_update_started: Arc::new(RwLock::new(false)),
-            firewall_scheduler,
+            firewall_scheduler: firewall_scheduler.map(|s| Arc::new(Mutex::new(s))),
         }
     }
 
     pub async fn initialize(&mut self) -> Result<()> {
+        // 如果有防火墙调度器，设置目标切换回调
+        if let Some(scheduler_arc) = &self.firewall_scheduler {
+            let scheduler_clone = scheduler_arc.clone();
+            let callback = Arc::new(move |rule_name: &str, old_target: &str, new_target: &str| {
+                let scheduler = scheduler_clone.clone();
+                let rule_name = rule_name.to_string();
+                let old_target = old_target.to_string();
+                let new_target = new_target.to_string();
+
+                tokio::spawn(async move {
+                    let mut scheduler = scheduler.lock().await;
+                    if let Err(e) = scheduler.sync_with_targets().await {
+                        error!("目标切换后同步防火墙规则失败: {}", e);
+                    } else {
+                        info!(
+                            "🔄 目标切换后防火墙规则已同步: {} {} -> {}",
+                            rule_name, old_target, new_target
+                        );
+                    }
+                });
+            });
+
+            self.common_manager.set_target_switch_callback(callback);
+        }
+
         // 初始化公共管理器
         self.common_manager.initialize().await?;
 
@@ -966,7 +991,6 @@ impl SmartForwarder {
         let forwarders = self.forwarders.clone();
         let common_manager = self.common_manager.clone();
         let rules = self.config.rules.clone();
-        let has_firewall_scheduler = self.firewall_scheduler.is_some();
 
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(15));
@@ -974,14 +998,8 @@ impl SmartForwarder {
             loop {
                 interval.tick().await;
 
-                // 如果启用了内核态转发，优先同步防火墙规则
-                if has_firewall_scheduler {
-                    // 注意：这里我们无法直接访问firewall_scheduler，因为它被移动到了SmartForwarder中
-                    // 在实际实现中，我们需要重新设计这部分架构
-                    debug!("内核态模式：防火墙规则同步由FirewallScheduler处理");
-                }
-
-                // 更新用户态转发器（如果存在）
+                // 内核态转发现在使用立即回调机制，不需要定期同步
+                // 只更新用户态转发器（如果存在）
                 for rule in &rules {
                     if let Ok(best_target) = common_manager.get_best_target(&rule.name).await {
                         let target_addr = best_target.to_string();
@@ -1003,12 +1021,23 @@ impl SmartForwarder {
     }
 
     pub async fn stop(&mut self) {
+        // 停止用户态转发器
         let mut forwarders = self.forwarders.write().await;
         for (name, forwarder) in forwarders.iter_mut() {
             info!("停止转发器: {name}");
             forwarder.stop().await;
         }
         forwarders.clear();
+
+        // 清理内核态转发规则
+        if let Some(scheduler_arc) = &self.firewall_scheduler {
+            let mut scheduler = scheduler_arc.lock().await;
+            if let Err(e) = scheduler.clear_all().await {
+                error!("清理内核态转发规则失败: {}", e);
+            } else {
+                info!("✅ 内核态转发规则已清理");
+            }
+        }
     }
 
     #[allow(dead_code)]

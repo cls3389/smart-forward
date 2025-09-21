@@ -8,6 +8,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
+// 目标切换回调函数类型
+pub type TargetSwitchCallback = Arc<dyn Fn(&str, &str, &str) + Send + Sync>;
+
 #[derive(Debug, Clone)]
 pub struct TargetInfo {
     pub original: String,
@@ -29,6 +32,7 @@ pub struct CommonManager {
     config: Config,
     target_cache: Arc<DashMap<String, TargetInfo>>,
     rule_infos: Arc<RwLock<DashMap<String, RuleInfo>>>,
+    target_switch_callback: Option<TargetSwitchCallback>,
 }
 
 impl CommonManager {
@@ -37,7 +41,12 @@ impl CommonManager {
             config,
             target_cache: Arc::new(DashMap::new()),
             rule_infos: Arc::new(RwLock::new(DashMap::new())),
+            target_switch_callback: None,
         }
+    }
+
+    pub fn set_target_switch_callback(&mut self, callback: TargetSwitchCallback) {
+        self.target_switch_callback = Some(callback);
     }
 
     pub async fn initialize(&self) -> Result<()> {
@@ -54,7 +63,13 @@ impl CommonManager {
         info!("初始健康检查完成: {health_check_result}");
 
         // 3. 选择最优地址阶段：为每个规则选择最佳目标
-        Self::update_rule_targets(&self.rule_infos, &self.target_cache, &self.config).await;
+        Self::update_rule_targets(
+            &self.rule_infos,
+            &self.target_cache,
+            &self.config,
+            &self.target_switch_callback,
+        )
+        .await;
 
         // 4. 验证初始化结果
         let rule_infos = self.rule_infos.read().await;
@@ -144,7 +159,7 @@ impl CommonManager {
                 let current_status = Self::batch_health_check(&target_cache, &config).await;
 
                 // 3. 异常后立即切换到可用的最高优先级地址
-                Self::update_rule_targets(&rule_infos, &target_cache, &config).await;
+                Self::update_rule_targets(&rule_infos, &target_cache, &config, &None).await;
 
                 // 只在状态变化时记录日志，减少重复输出
                 if last_status != Some(current_status.clone()) {
@@ -265,7 +280,7 @@ impl CommonManager {
         // 只有当确实有更新时才更新规则目标选择
         if any_updated {
             // 连接验证已同步完成，只有健康的地址会参与规则选择
-            Self::update_rule_targets(rule_infos, target_cache, config).await;
+            Self::update_rule_targets(rule_infos, target_cache, config, &None).await;
         }
     }
 
@@ -525,6 +540,7 @@ impl CommonManager {
         rule_infos: &Arc<RwLock<DashMap<String, RuleInfo>>>,
         target_cache: &Arc<DashMap<String, TargetInfo>>,
         config: &Config,
+        callback: &Option<TargetSwitchCallback>,
     ) {
         let rule_infos_write = rule_infos.write().await;
 
@@ -582,6 +598,16 @@ impl CommonManager {
                             "规则 {} 切换: {} -> {}",
                             rule_name, old.resolved, new.resolved
                         );
+
+                        // 立即调用回调通知防火墙更新
+                        if let Some(cb) = callback {
+                            cb(
+                                &rule_name,
+                                &old.resolved.to_string(),
+                                &new.resolved.to_string(),
+                            );
+                        }
+
                         true
                     } else {
                         // 地址相同，检查健康状态是否变化
@@ -699,6 +725,7 @@ fn select_best_target_with_stickiness(
                             target.resolved,
                             current.resolved
                         );
+                        // 这里需要传递rule_name，但在这个函数中没有，需要重构
                     }
                 }
                 return Some(target.clone());

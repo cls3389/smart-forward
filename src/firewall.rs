@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use std::collections::HashMap;
 use std::process::Command;
 use std::sync::Arc;
@@ -202,6 +202,11 @@ impl NftablesManager {
 
     fn generate_dnat_rule(&self, rule: &FirewallRule) -> Vec<String> {
         let target_parts: Vec<&str> = rule.target_addr.split(':').collect();
+        if target_parts.is_empty() {
+            // 防止空地址导致panic
+            error!("目标地址为空: {}", rule.target_addr);
+            return vec![];
+        }
         let target_ip = target_parts[0];
         let port_str = rule.listen_port.to_string();
         let port_str_ref = port_str.as_str();
@@ -505,6 +510,11 @@ impl IptablesManager {
 
     fn generate_dnat_args(&self, rule: &FirewallRule) -> Vec<String> {
         let target_parts: Vec<&str> = rule.target_addr.split(':').collect();
+        if target_parts.is_empty() {
+            // 防止空地址导致panic
+            error!("目标地址为空: {}", rule.target_addr);
+            return vec![];
+        }
         let target_ip = target_parts[0];
         let port_str = rule.listen_port.to_string();
         let port_str_ref = port_str.as_str();
@@ -818,8 +828,11 @@ impl FirewallScheduler {
         Ok(())
     }
 
-    pub async fn sync_with_targets(&self) -> Result<()> {
+    pub async fn sync_with_targets(&mut self) -> Result<()> {
         debug!("同步防火墙规则与健康检查结果");
+
+        // 收集需要更新的规则
+        let mut rules_to_update = Vec::new();
 
         for rule_config in &self.config.rules {
             if let Ok(best_target) = self.common_manager.get_best_target(&rule_config.name).await {
@@ -829,32 +842,62 @@ impl FirewallScheduler {
                 let protocols = rule_config.get_protocols();
                 for protocol in protocols {
                     let dnat_rule_id = format!("{}_{}_dnat", rule_config.name, protocol);
+                    let snat_rule_id = format!("{}_{}_snat", rule_config.name, protocol);
 
-                    let existing_rule = {
+                    let existing_dnat_rule = {
                         let rules = self.rules.read().await;
                         rules.get(&dnat_rule_id).cloned()
                     };
 
-                    if let Some(existing_rule) = existing_rule {
+                    if let Some(existing_rule) = existing_dnat_rule {
                         if existing_rule.target_addr != target_addr {
                             // 需要更新规则
                             info!(
-                                "目标变更: {} {} {} -> {}",
+                                "🔄 内核态转发规则更新: {} {} {} -> {}",
                                 rule_config.name, protocol, existing_rule.target_addr, target_addr
                             );
 
-                            // 更新DNAT规则
+                            // 创建更新后的DNAT和SNAT规则
                             let mut updated_dnat = existing_rule.clone();
                             updated_dnat.target_addr = target_addr.clone();
 
-                            // 这里需要调用manager的update方法
-                            // 由于借用检查器的限制，我们需要重新设计这部分
-                            // 暂时使用debug日志标记
-                            debug!("需要更新规则: {}", dnat_rule_id);
+                            let existing_snat_rule = {
+                                let rules = self.rules.read().await;
+                                rules.get(&snat_rule_id).cloned()
+                            };
+
+                            if let Some(mut updated_snat) = existing_snat_rule {
+                                updated_snat.target_addr = target_addr.clone();
+                                rules_to_update.push((updated_dnat, updated_snat));
+                            }
                         }
                     }
                 }
             }
+        }
+
+        // 执行规则更新
+        for (dnat_rule, snat_rule) in rules_to_update {
+            // 更新DNAT规则
+            if let Err(e) = self.manager.update_forward_rule(&dnat_rule).await {
+                error!("更新DNAT规则失败: {} - {}", dnat_rule.rule_id, e);
+                continue;
+            }
+
+            // 更新SNAT规则
+            if let Err(e) = self.manager.update_forward_rule(&snat_rule).await {
+                error!("更新SNAT规则失败: {} - {}", snat_rule.rule_id, e);
+                continue;
+            }
+
+            // 更新内存中的规则
+            {
+                let mut rules = self.rules.write().await;
+                rules.insert(dnat_rule.rule_id.clone(), dnat_rule);
+                rules.insert(snat_rule.rule_id.clone(), snat_rule);
+            }
+
+            debug!("✅ 内核态转发规则更新完成");
         }
 
         Ok(())
