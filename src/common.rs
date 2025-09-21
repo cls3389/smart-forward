@@ -58,8 +58,7 @@ impl CommonManager {
         }
 
         // 2. 初始健康检查阶段：批量并发检查所有目标
-        let health_check_result =
-            Self::batch_health_check(&self.target_cache, &self.config).await;
+        let health_check_result = Self::batch_health_check(&self.target_cache, &self.config).await;
         info!("初始健康检查完成: {health_check_result}");
 
         // 3. 选择最优地址阶段：为每个规则选择最佳目标
