@@ -128,7 +128,10 @@ impl TCPForwarder {
         stats: Arc<RwLock<ConnectionStats>>,
         _rule_name: &str,
     ) -> Result<()> {
-        let target: std::net::SocketAddr = crate::utils::resolve_target(target_addr).await?;
+        // 解析已解析的目标地址字符串（来自CommonManager的DNS解析结果）
+        let target: std::net::SocketAddr = target_addr
+            .parse()
+            .map_err(|e| anyhow::anyhow!("TCP目标地址解析失败: {} - {}", target_addr, e))?;
 
         stats.write().await.increment_connections();
 

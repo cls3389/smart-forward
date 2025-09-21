@@ -1,4 +1,4 @@
-# Smart Forward - 智能网络转发器 v1.5.5
+# Smart Forward - 智能网络转发器 v1.5.6
 
 [![🚀 全平台发布](https://github.com/cls3389/smart-forward/actions/workflows/release.yml/badge.svg)](https://github.com/cls3389/smart-forward/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -199,6 +199,33 @@ smart-forward/
 - ✅ **用户友好** - 提供多种部署选择，照顾不同用户群体
 
 ## 📈 版本更新
+
+### v1.5.6 (2025-09-21) 🔧 **用户态转发性能优化**
+🔥 **修复用户态转发DNS解析问题**
+
+⚡ **关键修复**：
+- **TCP转发优化** - 移除每连接DNS解析，使用预解析地址
+- **性能提升** - 用户态TCP转发延迟大幅降低
+- **一致性保证** - 用户态和内核态转发逻辑统一
+
+🎯 **技术改进**：
+- ✅ **TCP连接优化**: 直接解析预解析的SocketAddr字符串
+- ✅ **DNS缓存统一**: 用户态转发使用CommonManager的DNS解析结果
+- ✅ **代码一致性**: TCP和UDP转发逻辑保持一致
+
+### v1.5.5 (2025-09-21) 🚀 **完整动态更新支持**
+🔥 **DNAT规则动态更新完全修复**
+
+⚡ **核心功能**：
+- **回调机制完善** - 目标切换立即触发内核规则更新
+- **故障转移验证** - 完整的故障检测和恢复流程
+- **实时同步** - DNS解析变化毫秒级同步到nftables
+
+🎯 **验证完成**：
+- ✅ **动态更新**: 地址切换时DNAT规则实时更新
+- ✅ **故障转移**: 自动切换到备用地址
+- ✅ **智能恢复**: 优先级地址恢复时自动切回
+- ✅ **生产验证**: 在OpenWrt设备上完整测试通过
 
 ### v1.5.4 (2025-09-21) ⚡ **DNS解析性能优化**
 🔥 **大幅提升DNS解析和连接速度**
