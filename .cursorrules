@@ -72,12 +72,139 @@
 - Remove unused dependencies
 - Keep scripts (start.sh, stop.sh, restart.sh) consistent
 
+## SSH and Remote Operations Rules
+
+### SSH Connection Management
+- **MUST** use SSH keys for authentication (avoid passwords)
+- **SHOULD** use descriptive connection names for different environments
+- SSH key location: typically `~/.ssh/id_rsa` or `C:\Users\username\.ssh\id_rsa`
+- **MUST** verify SSH connection before file operations
+
+### Common SSH Operations
+```bash
+# Connect to device
+ssh -i ~/.ssh/id_rsa username@device_ip
+
+# Check running processes (OpenWrt compatible)
+ps w | grep smart-forward
+
+# Check system info
+uname -a
+cat /etc/os-release
+
+# File operations via SCP/SFTP
+scp -i ~/.ssh/id_rsa local_file username@device_ip:/remote/path
+```
+
+### Remote Device Management
+- **SHOULD** backup configuration before updates
+- **MUST** verify service status after deployment
+- **SHOULD** check logs after service restart
+- Common OpenWrt paths:
+  - Binary: `/usr/local/bin/smart-forward`
+  - Config: `/etc/smart-forward/config.yaml`
+  - Logs: `logread | grep smart-forward`
+
+### Service Management Commands
+```bash
+# OpenWrt service management
+/etc/init.d/smart-forward start
+/etc/init.d/smart-forward stop
+/etc/init.d/smart-forward restart
+/etc/init.d/smart-forward status
+
+# Check service status
+ps w | grep smart-forward
+netstat -tulpn | grep :port_number
+
+# View logs
+logread | grep smart-forward
+logread -f | grep smart-forward  # real-time
+```
+
+## Common Development Operations
+
+### Codebase Exploration
+- **USE** `codebase_search` for semantic code exploration
+- **USE** `grep` for exact text/symbol searches
+- **USE** `read_file` for examining specific files
+- **PREFER** parallel tool calls for efficiency
+
+### File Operations
+- **PREFER** editing existing files over creating new ones
+- **USE** `search_replace` for precise code modifications
+- **USE** `MultiEdit` for multiple changes in same file
+- **AVOID** creating documentation files unless explicitly requested
+
+### Git Operations Workflow
+```bash
+# Standard workflow
+git add .
+git commit -m "descriptive message with emoji"
+git push origin main
+
+# Version tagging
+git tag v1.x.x
+git push origin v1.x.x
+
+# Check status
+git status
+git log --oneline -10
+```
+
+### Code Quality Checks (MUST run before commit)
+```bash
+# Format and check
+cargo fmt
+cargo fmt -- --check
+
+# Quality checks
+cargo clippy
+cargo check
+cargo build --release
+
+# Optional: run tests
+cargo test
+```
+
+### Common File Patterns
+- Configuration: `config.yaml.example` (never commit real config)
+- Scripts: `start.sh`, `stop.sh`, `restart.sh` (consistent style)
+- Documentation: `README.md`, `.cursorrules`
+- Ignore: `.gitignore` (include sensitive configs)
+
+### Performance Monitoring
+```bash
+# Check resource usage
+top | grep smart-forward
+htop  # if available
+
+# Network monitoring
+netstat -tulpn | grep smart-forward
+ss -tulpn | grep smart-forward
+
+# Firewall rules (Linux)
+sudo nft list table inet smart_forward
+sudo iptables -t nat -L SMART_FORWARD_PREROUTING
+```
+
+### Debugging Common Issues
+- **DNS resolution**: `nslookup domain.com`, `dig domain.com`
+- **Network connectivity**: `telnet host port`, `nc -zv host port`
+- **Process issues**: `ps aux | grep smart-forward`
+- **Port conflicts**: `netstat -tulpn | grep :port`
+- **Log analysis**: `logread | grep -E 'ERROR|WARN'`
+
 ## Before Release Checklist
 1. Run `cargo fmt` and `cargo fmt -- --check`
 2. Run `cargo clippy` and fix all warnings
 3. Run `cargo check` and ensure compilation
-4. Update version numbers
-5. Update documentation
-6. Test scripts functionality
-7. Create git tag for release
-8. Verify GitHub Actions pass all checks
+4. Update version numbers in `Cargo.toml` and `README.md`
+5. Update documentation and configuration examples
+6. Test scripts functionality (`start.sh`, `stop.sh`, `restart.sh`)
+7. Commit changes with descriptive message
+8. Create git tag for release (`git tag v1.x.x`)
+9. Push code and tags (`git push origin main && git push origin v1.x.x`)
+10. Verify GitHub Actions pass all checks
+11. Test deployment on target devices (OpenWrt/Linux)
+12. Verify service functionality after deployment
