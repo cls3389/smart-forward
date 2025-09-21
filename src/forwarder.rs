@@ -513,8 +513,6 @@ impl UDPForwarder {
     ) {
         let mut buffer = vec![0u8; buffer_size];
         let socket = Arc::new(socket);
-        let mut target_cache: HashMap<String, (std::net::SocketAddr, std::time::Instant)> =
-            HashMap::new();
 
         loop {
             if !*running.read().await {
@@ -527,35 +525,12 @@ impl UDPForwarder {
 
                     let target_addr_str = target_addr.read().await.clone();
 
-                    // DNS缓存：30秒有效期 (避免过长缓存影响故障转移)
-                    let target = if let Some((cached_target, timestamp)) =
-                        target_cache.get(&target_addr_str)
-                    {
-                        if timestamp.elapsed().as_secs() < 30 {
-                            *cached_target
-                        } else {
-                            target_cache.remove(&target_addr_str);
-                            match crate::utils::resolve_target(&target_addr_str).await {
-                                Ok(addr) => {
-                                    target_cache.insert(
-                                        target_addr_str.clone(),
-                                        (addr, std::time::Instant::now()),
-                                    );
-                                    addr
-                                }
-                                Err(_) => continue,
-                            }
-                        }
-                    } else {
-                        match crate::utils::resolve_target(&target_addr_str).await {
-                            Ok(addr) => {
-                                target_cache.insert(
-                                    target_addr_str.clone(),
-                                    (addr, std::time::Instant::now()),
-                                );
-                                addr
-                            }
-                            Err(_) => continue,
+                    // 每次都重新解析DNS，确保地址变化能及时反映
+                    let target = match crate::utils::resolve_target(&target_addr_str).await {
+                        Ok(addr) => addr,
+                        Err(e) => {
+                            warn!("UDP目标解析失败: {}", e);
+                            continue;
                         }
                     };
 

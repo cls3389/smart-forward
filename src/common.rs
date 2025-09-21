@@ -153,10 +153,10 @@ impl CommonManager {
                 // 等待检查间隔
                 interval.tick().await;
 
-                // 1. 进行DNS检查并立即验证连接（已包含连接验证）
+                // 1. 重新解析所有域名的DNS（每次检查间隔都解析）
                 Self::update_dns_resolutions(&target_cache, &rule_infos, &config, &callback).await;
 
-                // 2. 对所有目标进行常规健康检查（补充验证）
+                // 2. 对所有目标进行健康检查（根据协议类型选择检查方式）
                 let current_status = Self::batch_health_check(&target_cache, &config).await;
 
                 // 3. 异常后立即切换到可用的最高优先级地址
@@ -171,7 +171,7 @@ impl CommonManager {
         });
     }
 
-    // DNS解析更新 - 独立解析模式，每个域名独立处理，避免批量触发复杂性
+    // DNS解析更新 - 每次检查间隔都重新解析所有域名，确保地址变化能及时反映
     async fn update_dns_resolutions(
         target_cache: &Arc<DashMap<String, TargetInfo>>,
         rule_infos: &Arc<RwLock<DashMap<String, RuleInfo>>>,
@@ -191,7 +191,6 @@ impl CommonManager {
             // 只处理域名，跳过IP:PORT格式
             if target_str.parse::<std::net::SocketAddr>().is_err() && target_str.contains('.') {
                 let target_cache_clone = target_cache.clone();
-                let config_clone = config.clone();
                 let task = tokio::spawn(async move {
                     match resolve_target(&target_str).await {
                         Ok(new_resolved) => {
@@ -207,46 +206,7 @@ impl CommonManager {
 
                             updated_info.resolved = new_resolved;
                             updated_info.last_check = Instant::now();
-
-                            // 只有当地址真正变化时才进行立即连接验证
-                            if has_changed {
-                                // 同步连接验证，确保新地址健康了再指定到规则
-                                let timeout_duration = Duration::from_secs(
-                                    config_clone
-                                        .get_dynamic_update_config()
-                                        .get_connection_timeout(),
-                                );
-                                let connection_result = tokio::time::timeout(
-                                    timeout_duration,
-                                    crate::utils::test_connection(&new_resolved.to_string()),
-                                )
-                                .await;
-
-                                match connection_result {
-                                    Ok(Ok(_)) => {
-                                        info!(
-                                            "目标 {target_str} 新地址连接验证成功，可用于规则选择"
-                                        );
-                                        updated_info.healthy = true;
-                                        updated_info.fail_count = 0;
-                                    }
-                                    Ok(Err(e)) => {
-                                        warn!(
-                                            "目标 {target_str} 新地址连接验证失败: {e}，不参与规则选择"
-                                        );
-                                        updated_info.healthy = false;
-                                        updated_info.fail_count += 1;
-                                    }
-                                    Err(_) => {
-                                        warn!(
-                                            "目标 {target_str} 新地址连接验证超时，不参与规则选择"
-                                        );
-                                        updated_info.healthy = false;
-                                        updated_info.fail_count += 1;
-                                    }
-                                }
-                            }
-                            // 对于地址未变化的情况，保持原有健康状态，通过常规健康检查更新
+                            // 注意：健康状态将由后续的batch_health_check更新
 
                             // 验证完成后更新缓存
                             target_cache_clone.insert(target_str.clone(), updated_info);
