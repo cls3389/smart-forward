@@ -10,6 +10,7 @@ pub struct Config {
     pub buffer_size: Option<usize>,
     pub rules: Vec<ForwardRule>,
     pub dynamic_update: Option<DynamicUpdateConfig>,
+    pub dns: Option<DnsConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,6 +54,13 @@ pub struct DynamicUpdateConfig {
     pub connection_timeout: Option<u64>,
     pub auto_reconnect: Option<bool>,
     // 移除 health_check_interval，使用统一的 check_interval
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DnsConfig {
+    pub servers: Vec<String>,
+    pub timeout: Option<u64>,    // DNS查询超时秒数，默认2秒
+    pub attempts: Option<usize>, // DNS查询重试次数，默认2次
 }
 
 impl Config {
@@ -136,6 +144,18 @@ impl Config {
             check_interval: Some(5),     // 5秒健康检查间隔，快速故障检测
             connection_timeout: Some(2), // 2秒连接超时，快速故障检测
             auto_reconnect: Some(true),  // 默认开启自动重连
+        })
+    }
+
+    // 获取DNS配置（默认只使用阿里云DNS）
+    pub fn get_dns_config(&self) -> DnsConfig {
+        self.dns.clone().unwrap_or(DnsConfig {
+            servers: vec![
+                "223.5.5.5:53".to_string(), // 阿里云DNS
+                "223.6.6.6:53".to_string(), // 阿里云DNS备用
+            ],
+            timeout: Some(2),  // 2秒超时
+            attempts: Some(2), // 重试2次
         })
     }
 }

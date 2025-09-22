@@ -101,7 +101,8 @@ impl CommonManager {
         let mut targets = Vec::new();
 
         for target_str in rule.targets.iter() {
-            match resolve_target(target_str).await {
+            let dns_config = self.config.get_dns_config();
+            match resolve_target(target_str, &dns_config).await {
                 Ok(resolved_addr) => {
                     let target_info = TargetInfo {
                         original: target_str.clone(),
@@ -190,8 +191,9 @@ impl CommonManager {
             // 只处理域名，跳过IP:PORT格式
             if target_str.parse::<std::net::SocketAddr>().is_err() && target_str.contains('.') {
                 let target_cache_clone = target_cache.clone();
+                let dns_config = config.get_dns_config(); // 在spawn外获取配置
                 let task = tokio::spawn(async move {
-                    match resolve_target(&target_str).await {
+                    match resolve_target(&target_str, &dns_config).await {
                         Ok(new_resolved) => {
                             let mut updated_info = target_info.clone();
                             let has_changed = new_resolved != target_info.resolved;
@@ -278,6 +280,7 @@ impl CommonManager {
                 .copied()
                 .unwrap_or("tcp");
 
+            let dns_config = config.get_dns_config(); // 在spawn外获取配置
             let task = tokio::spawn(async move {
                 let start = Instant::now();
 
@@ -287,7 +290,7 @@ impl CommonManager {
                     Ok(Duration::from_millis(0))
                 } else {
                     // 非UDP规则：进行TCP连接测试
-                    crate::utils::test_connection(&target_str).await
+                    crate::utils::test_connection(&target_str, &dns_config).await
                 };
 
                 let check_time = start.elapsed();

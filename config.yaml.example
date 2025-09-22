@@ -32,6 +32,16 @@ dynamic_update:
   connection_timeout: 3   # 连接超时 (秒)
   auto_reconnect: true    # 自动重连
 
+# DNS解析配置 (可选，默认使用阿里云DNS)
+dns:
+  servers:                # DNS服务器列表
+    - "223.5.5.5:53"      # 阿里云DNS主
+    - "223.6.6.6:53"      # 阿里云DNS备用
+    # - "8.8.8.8:53"      # Google DNS (可选)
+    # - "1.1.1.1:53"      # Cloudflare DNS (可选)
+  timeout: 2              # DNS查询超时 (秒)
+  attempts: 2             # DNS查询重试次数
+
 # ================================
 # 转发规则配置
 # ================================
