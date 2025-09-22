@@ -48,7 +48,7 @@ wget -qO- https://raw.githubusercontent.com/cls3389/smart-forward/main/install.s
 # 网络配置
 network:
   listen_addrs:
-    - "10.5.1.1"    # 指定具体IP避免劫持
+    - "192.168.1.100"    # 指定具体IP避免劫持
 
 # 转发规则
 rules:
@@ -56,9 +56,9 @@ rules:
     listen_port: 443
     protocol: "tcp"
     targets:
-      - "192.168.5.254:443"
-      - "123.123.123.111:50443"
-      - "stun-443.4.ipto.top"
+      - "192.168.1.1:443"
+      - "example.com:443"
+      - "backup.example.com"
 ```
 
 ### 3. 启动
@@ -510,8 +510,8 @@ logging:
 # 网络配置
 network:
   listen_addrs:
-    - "10.5.1.1"    # 指定监听地址，避免劫持所有请求
-                     # 设置0.0.0.0会监听所有接口，请谨慎使用
+    - "192.168.1.100"    # 指定监听地址，避免劫持所有请求
+                        # 设置0.0.0.0会监听所有接口，请谨慎使用
 
 # 缓冲区大小 (仅用户态模式有效，内核态模式忽略)
 buffer_size: 8192
@@ -529,7 +529,7 @@ rules:
     protocol: "tcp"        # tcp, udp, 或 ["tcp", "udp"]
     buffer_size: 4096      # 规则级缓冲区大小
     targets:
-      - "192.168.1.100:443"  # 内网服务器 (最高优先级)
+      - "192.168.1.1:443"  # 内网服务器 (最高优先级)
       - "backup.example.com:443"  # 外网备用
     dynamic_update:
       check_interval: 5
