@@ -339,7 +339,7 @@ dynamic_update:
 🔥 **革命性性能提升 - 内核态转发支持**
 
 ⚡ **核心功能**：
-- **内核态转发** - Linux下支持iptables/nftables，性能提升10倍+
+- **内核态转发** - Linux/macOS下支持iptables/nftables/pfctl，性能提升10倍+
 - **混合架构** - 用户态健康检查 + 内核态数据转发
 - **智能模式** - 自动尝试内核态，失败回退用户态
 - **防火墙优化** - 自动处理Firewall4优先级，避免规则冲突
@@ -347,6 +347,7 @@ dynamic_update:
 🛡️ **防火墙支持**：
 - **nftables** - 优先级-150 (高于Firewall4默认-100)
 - **iptables** - 插入到链首位置，确保优先执行
+- **pfctl** - macOS下支持pfctl内核级转发
 - **自动检测** - 智能选择最佳防火墙后端
 
 🎯 **OpenWrt专项优化**：
