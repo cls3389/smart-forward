@@ -1,6 +1,6 @@
 # Smart Forward - 智能网络转发器 v1.5.11
 
-[![🚀 全平台发布](https://github.com/cls3389/smart-forward/actions/workflows/release.yml/badge.svg)](https://github.com/cls3389/smart-forward/actions/workflows/release.yml)
+[![🚀 全平台发布](https://img.shields.io/github/actions/workflow/status/cls3389/smart-forward/release.yml?branch=main&label=%F0%9F%9A%80%20%E5%85%A8%E5%B9%B3%E5%8F%B0%E5%8F%91%E5%B8%83)](https://github.com/cls3389/smart-forward/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
 
