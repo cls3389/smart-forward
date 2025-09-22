@@ -129,13 +129,45 @@ rules:             # 转发规则 (核心)
 - Docker (容器化)
 - Windows (开发/测试)
 
-### 2. 日志管理
+### 2. SSH密钥管理
+
+**密钥位置**：
+- Windows: `C:\Users\cls44\.ssh\id_rsa`
+- Linux: `~/.ssh/id_rsa`
+
+**SSH连接命令**：
+```bash
+# 连接到cudy设备
+ssh root@cudy
+ssh root@10.5.1.1
+
+# 使用指定密钥
+ssh -i ~/.ssh/id_rsa root@cudy
+```
+
+**文件传输**：
+```bash
+# 上传文件到设备
+scp smart-forward root@cudy:/tmp/
+scp -i ~/.ssh/id_rsa smart-forward root@cudy:/tmp/
+
+# 下载配置文件
+scp root@cudy:/etc/smart-forward/config.yaml ./
+```
+
+**密钥管理注意事项**：
+- ✅ 密钥文件权限: `chmod 600 ~/.ssh/id_rsa`
+- ✅ 定期备份SSH密钥
+- ✅ 避免在代码中硬编码IP地址
+- ⚠️ 不要将私钥文件提交到Git仓库
+
+### 3. 日志管理
 - **生产环境**: INFO级别
 - **调试环境**: DEBUG级别
 - **关键事件**: 地址切换、健康状态变化
 - **避免**: 冗余的连接日志
 
-### 3. 性能优化
+### 4. 性能优化
 - 内核态转发优先 (nftables/iptables)
 - 用户态转发备用
 - DNS解析优化 (1秒超时)
@@ -194,6 +226,61 @@ rules:             # 转发规则 (核心)
 - ⚡ DNS解析超时优化到1秒
 - 🎯 专注核心转发功能
 - 📚 项目规则文档建立
+
+### 常用运维命令
+
+**服务管理**:
+```bash
+# 连接设备
+ssh root@cudy
+
+# 服务控制
+/etc/init.d/smart-forward start
+/etc/init.d/smart-forward stop
+/etc/init.d/smart-forward restart
+/etc/init.d/smart-forward status
+
+# 检查进程
+ps w | grep smart-forward
+
+# 查看日志
+logread | grep smart-forward | tail -10
+logread -f | grep smart-forward  # 实时日志
+```
+
+**版本更新流程**:
+```bash
+# 1. 下载新版本 (本地)
+curl -L -o smart-forward-arm64.tar.gz "https://github.com/cls3389/smart-forward/releases/download/v1.x.x/smart-forward-linux-aarch64-musl.tar.gz"
+tar -xzf smart-forward-arm64.tar.gz
+
+# 2. 上传到设备
+scp smart-forward root@cudy:/tmp/smart-forward-new
+
+# 3. 设备上更新
+ssh root@cudy
+/etc/init.d/smart-forward stop
+cp /usr/local/bin/smart-forward /usr/local/bin/smart-forward.backup
+cp /tmp/smart-forward-new /usr/local/bin/smart-forward
+chmod +x /usr/local/bin/smart-forward
+/usr/local/bin/smart-forward -v -c /etc/smart-forward/config.yaml  # 验证
+/etc/init.d/smart-forward start
+```
+
+**配置管理**:
+```bash
+# 备份配置
+scp root@cudy:/etc/smart-forward/config.yaml ./config-backup-$(date +%Y%m%d).yaml
+
+# 验证配置
+/usr/local/bin/smart-forward -v -c /etc/smart-forward/config.yaml
+
+# 查看nftables规则
+nft list table inet smart_forward
+
+# 检查端口监听
+netstat -tulpn | grep smart-forward
+```
 
 ## 🔮 未来发展
 
