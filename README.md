@@ -1,4 +1,4 @@
-# Smart Forward - 智能网络转发器 v1.5.6
+# Smart Forward - 智能网络转发器 v1.5.7
 
 [![🚀 全平台发布](https://github.com/cls3389/smart-forward/actions/workflows/release.yml/badge.svg)](https://github.com/cls3389/smart-forward/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -199,6 +199,23 @@ smart-forward/
 - ✅ **用户友好** - 提供多种部署选择，照顾不同用户群体
 
 ## 📈 版本更新
+
+### v1.5.7 (2025-09-22) 🌐 **DNS配置优化与简化**
+
+**🔧 DNS配置功能**
+- 添加自定义DNS服务器配置支持
+- 默认只使用阿里云DNS (223.5.5.5, 223.6.6.6)，解决多DNS冲突
+- 支持配置DNS超时时间和重试次数
+- 向后兼容现有配置文件
+
+**🚀 代码优化**
+- 简化DNS解析逻辑，合并为统一的`resolve_with_dns()`函数
+- 统一处理A/AAAA记录和TXT记录解析
+- 减少代码重复，提高维护性
+
+**📋 解决问题**
+- 修复多DNS服务器导致的TXT记录解析不一致问题
+- 提供更好的DNS配置灵活性
 
 ### v1.5.6 (2025-09-21) 🔧 **用户态转发性能优化**
 🔥 **修复用户态转发DNS解析问题**
