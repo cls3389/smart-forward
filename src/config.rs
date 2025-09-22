@@ -52,7 +52,6 @@ pub struct ForwardRule {
 pub struct DynamicUpdateConfig {
     pub check_interval: Option<u64>,
     pub connection_timeout: Option<u64>,
-    pub auto_reconnect: Option<bool>,
     // 移除 health_check_interval，使用统一的 check_interval
 }
 
@@ -83,7 +82,6 @@ impl Config {
             config.dynamic_update = Some(DynamicUpdateConfig {
                 check_interval: Some(5),     // 5秒健康检查间隔，快速故障检测
                 connection_timeout: Some(3), // 3秒连接超时，快速故障检测
-                auto_reconnect: Some(true),  // 默认开启自动重连
             });
         }
 
@@ -143,7 +141,6 @@ impl Config {
         self.dynamic_update.clone().unwrap_or(DynamicUpdateConfig {
             check_interval: Some(5),     // 5秒健康检查间隔，快速故障检测
             connection_timeout: Some(2), // 2秒连接超时，快速故障检测
-            auto_reconnect: Some(true),  // 默认开启自动重连
         })
     }
 
@@ -167,10 +164,6 @@ impl DynamicUpdateConfig {
 
     pub fn get_connection_timeout(&self) -> u64 {
         self.connection_timeout.unwrap_or(2) // 2秒快速故障检测
-    }
-
-    pub fn get_auto_reconnect(&self) -> bool {
-        self.auto_reconnect.unwrap_or(true)
     }
 }
 
@@ -217,7 +210,6 @@ impl ForwardRule {
                 connection_timeout: rule_config
                     .connection_timeout
                     .or(global_config.connection_timeout),
-                auto_reconnect: rule_config.auto_reconnect.or(global_config.auto_reconnect),
             }
         } else {
             global_config.clone()
