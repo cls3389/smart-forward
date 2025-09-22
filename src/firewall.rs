@@ -126,7 +126,8 @@ impl PfctlManager {
         // 格式: rdr on interface from any to any port listen_port -> target_addr
         let target_parts: Vec<&str> = rule.target_addr.split(':').collect();
         let target_ip = target_parts[0];
-        let target_port = target_parts.get(1).unwrap_or(&rule.listen_port.to_string());
+        let listen_port_str = rule.listen_port.to_string();
+        let target_port = target_parts.get(1).map_or(listen_port_str.as_str(), |v| *v);
 
         format!(
             "rdr pass on lo0 proto {} from any to any port {} -> {} port {}",
