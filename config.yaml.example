@@ -33,12 +33,15 @@ dynamic_update:
   auto_reconnect: true    # 自动重连
 
 # DNS解析配置 (可选，默认使用阿里云DNS)
+# 建议：使用您的域名服务商提供的DNS服务器以获得最佳解析速度和一致性
 dns:
   servers:                # DNS服务器列表
     - "223.5.5.5:53"      # 阿里云DNS主
     - "223.6.6.6:53"      # 阿里云DNS备用
-    # - "8.8.8.8:53"      # Google DNS (可选)
-    # - "1.1.1.1:53"      # Cloudflare DNS (可选)
+    # 推荐配置示例：
+    # - "your-domain-provider-dns:53"  # 您的域名服务商DNS (推荐)
+    # - "8.8.8.8:53"      # Google DNS
+    # - "1.1.1.1:53"      # Cloudflare DNS
   timeout: 2              # DNS查询超时 (秒)
   attempts: 2             # DNS查询重试次数
 
