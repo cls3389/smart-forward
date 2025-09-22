@@ -6,7 +6,7 @@ mod utils;
 
 use anyhow::Result;
 use clap::Parser;
-use log::{info, warn};
+use log::{debug, info, warn};
 use std::path::PathBuf;
 
 use crate::common::CommonManager;
@@ -235,8 +235,8 @@ async fn main() -> Result<()> {
     common_manager.initialize().await?;
 
     // 智能选择转发模式：默认优先内核态，失败自动回退用户态
-    let firewall_scheduler = if cfg!(target_os = "linux") {
-        // Linux环境：智能转发模式选择
+    let firewall_scheduler = if cfg!(target_os = "linux") || cfg!(target_os = "macos") {
+        // Linux/macOS环境：智能转发模式选择
         if args.user_mode || config.network.contains_wildcard() {
             if config.network.contains_wildcard() {
                 info!("📡 监听地址包含0.0.0.0，自动使用用户态转发避免劫持问题");
@@ -274,8 +274,28 @@ async fn main() -> Result<()> {
                         Some(scheduler)
                     }
                     Err(e) => {
-                        warn!("⚠️  内核态转发初始化失败: {}，自动回退到用户态转发", e);
-                        info!("💡 提示：可使用 --user-mode 禁用内核态自动尝试");
+                        // 检查是否是权限相关错误
+                        let error_msg = format!("{}", e);
+                        if error_msg.contains("权限不足")
+                            || error_msg.contains("管理员权限")
+                            || error_msg.contains("sudo")
+                            || error_msg.contains("permission denied")
+                            || error_msg.contains("Operation not permitted")
+                        {
+                            // 权限错误，回退到用户态，但提示可以用管理员权限获得更好性能
+                            warn!("⚠️  内核态转发需要管理员权限，自动回退到用户态转发");
+                            info!("🚀 性能提示：使用 sudo 以管理员权限运行可启用高性能内核级转发");
+                            info!("💡 切换命令：sudo ./smart-forward");
+                            if cfg!(target_os = "linux") {
+                                info!("📦 Docker环境：确保容器以 --privileged 模式运行");
+                            }
+                        } else if error_msg.contains("命令不可用") {
+                            // 命令不可用，静默回退到用户态（不提示，因为用户不会主动安装）
+                            // 静默处理，这是正常的回退情况
+                        } else {
+                            // 其他未知错误，可能是系统配置问题，静默回退
+                            debug!("内核态转发初始化失败: {}，自动回退到用户态转发", e);
+                        }
                         None
                     }
                 },
@@ -291,7 +311,7 @@ async fn main() -> Result<()> {
     } else {
         if args.kernel_mode {
             warn!(
-                "⚠️  内核态转发仅支持Linux系统，在{}上自动使用用户态转发",
+                "⚠️  内核态转发仅支持Linux和macOS系统，在{}上自动使用用户态转发",
                 std::env::consts::OS
             );
         }

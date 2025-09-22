@@ -19,6 +19,7 @@ use crate::config::Config;
 pub enum FirewallBackend {
     Nftables,
     Iptables,
+    Pfctl, // macOS pfctl防火墙
 }
 
 // ================================
@@ -89,6 +90,169 @@ pub trait FirewallManager: Send + Sync {
     async fn list_rules(&self) -> Result<Vec<FirewallRule>>;
     async fn is_rule_exists(&self, rule_id: &str) -> Result<bool>;
     async fn rebuild_all_rules(&mut self, rules: &[FirewallRule]) -> Result<()>;
+}
+
+// ================================
+// macOS pfctl 管理器实现
+// ================================
+#[cfg(target_os = "macos")]
+pub struct PfctlManager {
+    anchor_name: String,
+    rules: HashMap<String, FirewallRule>,
+}
+
+#[cfg(target_os = "macos")]
+impl PfctlManager {
+    pub fn new() -> Self {
+        Self {
+            anchor_name: "smart_forward".to_string(),
+            rules: HashMap::new(),
+        }
+    }
+
+    async fn execute_pfctl(&self, args: &[&str]) -> Result<String> {
+        let output = Command::new("pfctl").args(args).output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!("pfctl命令执行失败: {}", stderr));
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
+    fn generate_nat_rule(&self, rule: &FirewallRule) -> String {
+        // 生成pfctl NAT规则
+        // 格式: rdr on interface from any to any port listen_port -> target_addr
+        let target_parts: Vec<&str> = rule.target_addr.split(':').collect();
+        let target_ip = target_parts[0];
+        let target_port = target_parts.get(1).unwrap_or(&rule.listen_port.to_string());
+
+        format!(
+            "rdr pass on lo0 proto {} from any to any port {} -> {} port {}",
+            rule.protocol.to_lowercase(),
+            rule.listen_port,
+            target_ip,
+            target_port
+        )
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[async_trait]
+impl FirewallManager for PfctlManager {
+    async fn initialize(&mut self) -> Result<()> {
+        info!("初始化pfctl防火墙管理器");
+
+        // 检查pfctl命令是否可用，并提供详细的权限提示
+        match Command::new("pfctl").arg("-s").arg("info").output() {
+            Ok(output) => {
+                if output.status.success() {
+                    info!("✅ pfctl内核级转发已启用，性能模式激活");
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "pfctl命令执行失败，需要管理员权限\n💡 解决方法:\n   1. 使用 sudo 以管理员权限运行: sudo ./smart-forward\n   2. 或使用 --user-mode 启用用户态转发: ./smart-forward --user-mode"
+                    ));
+                }
+            }
+            Err(_) => {
+                return Err(anyhow::anyhow!(
+                    "pfctl命令不可用\n💡 macOS内核级转发需要:\n   1. 以管理员权限运行: sudo ./smart-forward\n   2. 或使用用户态转发: ./smart-forward --user-mode\n   3. 确保系统防火墙功能正常"
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn add_forward_rule(&mut self, rule: &FirewallRule) -> Result<()> {
+        info!(
+            "添加pfctl转发规则: {} -> {}",
+            rule.listen_port, rule.target_addr
+        );
+
+        let nat_rule = self.generate_nat_rule(rule);
+        let anchor_rule_file = format!("/tmp/smart_forward_{}.conf", rule.rule_id);
+
+        // 写入规则到临时文件
+        std::fs::write(&anchor_rule_file, &nat_rule)?;
+
+        // 加载规则到锚点
+        let anchor_path = format!("{}/{}", self.anchor_name, rule.rule_id);
+        self.execute_pfctl(&["-a", &anchor_path, "-f", &anchor_rule_file])
+            .await?;
+
+        // 清理临时文件
+        std::fs::remove_file(&anchor_rule_file).ok();
+
+        // 保存规则到内存
+        self.rules.insert(rule.rule_id.clone(), rule.clone());
+
+        debug!("pfctl转发规则添加成功: {}", rule.rule_id);
+        Ok(())
+    }
+
+    async fn remove_forward_rule(&mut self, rule_id: &str) -> Result<()> {
+        info!("删除pfctl转发规则: {}", rule_id);
+
+        let anchor_path = format!("{}/{}", self.anchor_name, rule_id);
+
+        // 清空锚点规则
+        self.execute_pfctl(&["-a", &anchor_path, "-F", "nat"])
+            .await?;
+
+        // 从内存中移除
+        self.rules.remove(rule_id);
+
+        debug!("pfctl转发规则删除成功: {}", rule_id);
+        Ok(())
+    }
+
+    async fn update_forward_rule(&mut self, rule: &FirewallRule) -> Result<()> {
+        info!(
+            "更新pfctl转发规则: {} -> {}",
+            rule.rule_id, rule.target_addr
+        );
+
+        // 先删除旧规则，再添加新规则
+        self.remove_forward_rule(&rule.rule_id).await?;
+        self.add_forward_rule(rule).await?;
+
+        Ok(())
+    }
+
+    async fn clear_all_rules(&mut self) -> Result<()> {
+        info!("清理所有pfctl转发规则");
+
+        // 清空整个锚点
+        self.execute_pfctl(&["-a", &self.anchor_name, "-F", "all"])
+            .await?;
+
+        // 清空内存中的规则
+        self.rules.clear();
+
+        Ok(())
+    }
+
+    async fn list_rules(&self) -> Result<Vec<FirewallRule>> {
+        Ok(self.rules.values().cloned().collect())
+    }
+
+    async fn is_rule_exists(&self, rule_id: &str) -> Result<bool> {
+        Ok(self.rules.contains_key(rule_id))
+    }
+
+    async fn rebuild_all_rules(&mut self, rules: &[FirewallRule]) -> Result<()> {
+        // 清空所有规则
+        self.clear_all_rules().await?;
+
+        // 重新添加所有规则
+        for rule in rules {
+            self.add_forward_rule(rule).await?;
+        }
+
+        Ok(())
+    }
 }
 
 // ================================
@@ -282,9 +446,19 @@ impl FirewallManager for NftablesManager {
     async fn initialize(&mut self) -> Result<()> {
         info!("初始化nftables管理器，针对Firewall4优先级优化");
 
-        // 检查nft命令是否可用
-        if Command::new("nft").arg("--version").output().is_err() {
-            return Err(anyhow::anyhow!("nft命令不可用，请确保已安装nftables"));
+        // 检查nft命令权限（命令不可用时会自动回退到用户态）
+        match Command::new("nft").arg("--version").output() {
+            Ok(output) => {
+                if !output.status.success() {
+                    return Err(anyhow::anyhow!(
+                        "nft命令权限不足\n💡 解决方法:\n   1. 使用管理员权限运行: sudo ./smart-forward\n   2. 或使用用户态转发: ./smart-forward --user-mode"
+                    ));
+                }
+            }
+            Err(_) => {
+                // nft命令不可用，回退到用户态转发
+                return Err(anyhow::anyhow!("nft命令不可用"));
+            }
         }
 
         // 如果表已存在，先清理
@@ -568,9 +742,19 @@ impl FirewallManager for IptablesManager {
     async fn initialize(&mut self) -> Result<()> {
         info!("初始化iptables管理器，针对传统OpenWrt优化");
 
-        // 检查iptables命令是否可用
-        if Command::new("iptables").arg("--version").output().is_err() {
-            return Err(anyhow::anyhow!("iptables命令不可用，请确保已安装iptables"));
+        // 检查iptables命令权限（命令不可用时会自动回退到用户态）
+        match Command::new("iptables").arg("--version").output() {
+            Ok(output) => {
+                if !output.status.success() {
+                    return Err(anyhow::anyhow!(
+                        "iptables命令权限不足\n💡 解决方法:\n   1. 使用管理员权限运行: sudo ./smart-forward\n   2. 或使用用户态转发: ./smart-forward --user-mode"
+                    ));
+                }
+            }
+            Err(_) => {
+                // iptables命令不可用，回退到用户态转发
+                return Err(anyhow::anyhow!("iptables命令不可用"));
+            }
         }
 
         // 创建链
@@ -750,6 +934,12 @@ impl FirewallScheduler {
         let manager: Box<dyn FirewallManager> = match backend {
             FirewallBackend::Nftables => Box::new(NftablesManager::new(listen_addr)),
             FirewallBackend::Iptables => Box::new(IptablesManager::new(listen_addr)),
+            #[cfg(target_os = "macos")]
+            FirewallBackend::Pfctl => Box::new(PfctlManager::new()),
+            #[cfg(not(target_os = "macos"))]
+            FirewallBackend::Pfctl => {
+                return Err(anyhow::anyhow!("pfctl防火墙后端只在macOS上支持"));
+            }
         };
 
         Ok(Self {
@@ -915,6 +1105,24 @@ impl FirewallScheduler {
 // 防火墙后端检测
 // ================================
 pub fn detect_firewall_backend() -> FirewallBackend {
+    // Windows环境不需要防火墙后端检测
+    if cfg!(target_os = "windows") {
+        return FirewallBackend::Nftables; // 返回默认值，但不会实际使用
+    }
+
+    // macOS环境检测pfctl
+    if cfg!(target_os = "macos") {
+        // 检查pfctl命令是否可用
+        if Command::new("pfctl").arg("-s").arg("info").output().is_ok() {
+            info!("检测到macOS pfctl支持");
+            return FirewallBackend::Pfctl;
+        } else {
+            // pfctl不可用时，不提示警告，让后续初始化时提供更详细的错误信息
+            return FirewallBackend::Pfctl;
+        }
+    }
+
+    // Linux环境的防火墙检测
     // 检查nft命令
     if Command::new("nft").arg("--version").output().is_ok() {
         info!("检测到nftables支持");
